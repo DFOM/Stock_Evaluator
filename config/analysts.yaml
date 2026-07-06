@@ -1,6 +1,15 @@
 # AI analyst roster. Each entry mirrors the future DB row exactly (name,
-# provider_type, model, base_url, api_key_env, active, weight) so the Phase 3
-# migration to Postgres is a straight copy.
+# provider_type, model, base_url, api_key_env, active, weight,
+# use_in_blind, use_in_sighted) so the Phase 3 migration to Postgres is a
+# straight copy.
+#
+# Dual-pass flow (default since Phase 2.7): every active analyst runs in
+# the price-BLIND pass (feeds the fair-value consensus) and the SIGHTED
+# pass (harvested for risks/disputes/critiques only — sighted fair values
+# anchor to the market price and are excluded from consensus math).
+# Per-analyst opt-outs, both default true:
+#   use_in_blind: false    -> critic-only analyst (e.g. a cheap model)
+#   use_in_sighted: false  -> consensus-only analyst (skip the critic pass)
 #
 # Keys NEVER live here — api_key_env names the environment variable holding
 # the key, and the keys themselves live in a local .env (gitignored). An

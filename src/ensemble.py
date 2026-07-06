@@ -1,10 +1,20 @@
-"""The AI analyst ensemble: roster loading, fan-out, and consensus math.
+"""The AI analyst ensemble: roster loading, dual-pass fan-out, consensus math.
 
-Core principle: disagreement is signal, not noise. The ensemble reports a
-weighted consensus range AND a disagreement index (how far the analysts'
-midpoints spread relative to the consensus midpoint). High disagreement
-lowers overall confidence and is displayed prominently — it is never hidden
-by the averaging.
+Architecture (locked in Phase 2.7 after the anchoring diagnostics):
+
+  PASS A (blind)   — analysts receive the price-blind packet; their ranges
+                     plus the rule-based engine form the fair-value CONSENSUS.
+  PASS B (sighted) — the same analysts receive the full packet; only their
+                     QUALITATIVE output is used (risks, archetype disputes,
+                     method critiques, theses). Their fair values are logged
+                     but excluded from consensus math — the Phase 2.6 blind
+                     experiment showed sighted fair values anchor to the
+                     market price, making their "agreement" low-information.
+
+Core principle: disagreement is signal, not noise. AI_DISAGREEMENT (spread
+across blind AI midpoints) drives the confidence penalty; MODEL_GAP
+(rule-based mid vs blind AI mid) is displayed separately. Neither is ever
+hidden by averaging.
 """
 from __future__ import annotations
 
@@ -49,7 +59,9 @@ class EnsembleResult:
     # model_gap — distance between the rule-based midpoint and the AI
     #   consensus midpoint ("our rule-based assumptions differ from LLM
     #   judgment"); displayed, but does not penalize confidence.
+    ai_consensus_low: Optional[float] = None
     ai_consensus_mid: Optional[float] = None
+    ai_consensus_high: Optional[float] = None
     ai_disagreement: Optional[float] = None
     model_gap: Optional[float] = None
     overall_confidence: Optional[float] = None
@@ -71,7 +83,9 @@ class EnsembleResult:
             "consensus_low": self.consensus_low,
             "consensus_mid": self.consensus_mid,
             "consensus_high": self.consensus_high,
+            "ai_consensus_low": self.ai_consensus_low,
             "ai_consensus_mid": self.ai_consensus_mid,
+            "ai_consensus_high": self.ai_consensus_high,
             "ai_disagreement": self.ai_disagreement,
             "model_gap": self.model_gap,
             "overall_confidence": self.overall_confidence,
@@ -114,6 +128,8 @@ def load_roster(only_names: Optional[list[str]] = None) -> tuple[list[tuple[Anal
             weight=float(entry.get("weight", 1.0)),
             cost_per_mtok_input=float(entry.get("cost_per_mtok_input", 0.0)),
             cost_per_mtok_output=float(entry.get("cost_per_mtok_output", 0.0)),
+            use_in_blind=entry.get("use_in_blind", True),
+            use_in_sighted=entry.get("use_in_sighted", True),
         )
         known_names.add(cfg.name)
 
@@ -182,7 +198,9 @@ def _consensus(result: EnsembleResult, contributors: list[AnalystResponse]) -> N
     if ai:
         ai_w = sum(w for _, w in ai)
         ai_mean = sum(r.midpoint * w for r, w in ai) / ai_w
+        result.ai_consensus_low = round(sum(r.fair_value_low * w for r, w in ai) / ai_w, 2)
         result.ai_consensus_mid = round(ai_mean, 2)
+        result.ai_consensus_high = round(sum(r.fair_value_high * w for r, w in ai) / ai_w, 2)
 
         # AI disagreement: weighted std dev of AI midpoints / |AI consensus
         # midpoint| (coefficient of variation). Needs 2+ AI analysts.
@@ -207,34 +225,47 @@ def _consensus(result: EnsembleResult, contributors: list[AnalystResponse]) -> N
 ANCHORED_THRESHOLD = 0.05  # both price_deviation and ai_disagreement below this -> warn
 
 
-def run_ensemble(
-    briefing_packet: dict[str, Any],
+@dataclass
+class DualPassResult:
+    """One full analysis run. `consensus` is authoritative for fair value
+    (blind AI pass + rule-based engine). `critic` is the sighted pass,
+    harvested for qualitative output only — its fair values are logged and
+    shown as an anchoring-prone footnote, never averaged into the consensus."""
+
+    mode: str  # "dual" | "blind_only" | "sighted_only"
+    consensus: EnsembleResult
+    critic: Optional[EnsembleResult] = None
+
+    @property
+    def total_cost(self) -> float:
+        return self.consensus.total_cost + (self.critic.total_cost if self.critic else 0.0)
+
+
+def _build_pass(
+    responses: list[AnalystResponse],
+    *,
+    blind: bool,
+    include_rule_based: bool,
+    packet: dict[str, Any],
     fair_value: FairValueResult,
-    only_names: Optional[list[str]] = None,
-    blind: bool = False,
-    current_price: Optional[float] = None,
+    current_price: Optional[float],
+    skipped: list[str],
 ) -> EnsembleResult:
     result = EnsembleResult(blind=blind)
-    roster, skipped = load_roster(only_names)
+    result.responses = list(responses)
     result.skipped = skipped
-
-    adapters = [ADAPTERS[cfg.provider_type](cfg, key) for cfg, key in roster]
-    if adapters:
-        with ThreadPoolExecutor(max_workers=min(len(adapters), 6)) as pool:
-            result.responses = list(pool.map(lambda a: a.analyze(briefing_packet, blind=blind), adapters))
-
-    result.total_cost = sum(r.estimated_cost for r in result.responses)
+    result.total_cost = sum(r.estimated_cost for r in responses)
 
     contributors = [r for r in result.responses if r.ok]
+    if include_rule_based:
+        rule_based = _rule_based_response(
+            fair_value, float(load_analyst_config().get("rule_based_weight", 1.0))
+        )
+        if rule_based is not None:
+            contributors.append(rule_based)
+            result.responses.append(rule_based)
 
-    rule_based = _rule_based_response(
-        fair_value, float(load_analyst_config().get("rule_based_weight", 1.0))
-    )
-    if rule_based is not None:
-        contributors.append(rule_based)
-        result.responses.append(rule_based)
-
-    briefing_archetype = (briefing_packet.get("archetype") or {}).get("name")
+    briefing_archetype = (packet.get("archetype") or {}).get("name")
     for r in contributors:
         if r.archetype_agreement is False:
             suggestion = r.suggested_archetype or "unspecified"
@@ -246,8 +277,8 @@ def run_ensemble(
 
     if current_price and result.ai_consensus_mid:
         result.price_deviation = round(abs(result.ai_consensus_mid / current_price - 1), 3)
-        # Only meaningful in sighted mode: blind analysts never saw the price,
-        # so a small deviation there is genuine agreement, not anchoring.
+        # Only meaningful for sighted analysts: blind ones never saw the
+        # price, so a small deviation there is genuine, not anchoring.
         result.anchored_warning = (
             not blind
             and result.price_deviation < ANCHORED_THRESHOLD
@@ -256,3 +287,61 @@ def run_ensemble(
         )
 
     return result
+
+
+def run_dual_pass(
+    sighted_packet: dict[str, Any],
+    blind_packet: dict[str, Any],
+    fair_value: FairValueResult,
+    only_names: Optional[list[str]] = None,
+    mode: str = "dual",
+    current_price: Optional[float] = None,
+) -> DualPassResult:
+    """Default flow: blind pass (consensus) + sighted pass (critic), all
+    analyst calls across both passes fanned out in one thread pool.
+    Debug modes: "blind_only" / "sighted_only" run a single pass, with the
+    sighted-only consensus behaving like the pre-2.7 sighted ensemble."""
+    roster, skipped = load_roster(only_names)
+
+    run_blind = mode in ("dual", "blind_only")
+    run_sighted = mode in ("dual", "sighted_only")
+    blind_roster = [(c, k) for c, k in roster if c.use_in_blind] if run_blind else []
+    sighted_roster = [(c, k) for c, k in roster if c.use_in_sighted] if run_sighted else []
+
+    tasks: list[tuple[str, Any, dict[str, Any], bool]] = [
+        ("blind", ADAPTERS[cfg.provider_type](cfg, key), blind_packet, True)
+        for cfg, key in blind_roster
+    ] + [
+        ("sighted", ADAPTERS[cfg.provider_type](cfg, key), sighted_packet, False)
+        for cfg, key in sighted_roster
+    ]
+
+    by_pass: dict[str, list[AnalystResponse]] = {"blind": [], "sighted": []}
+    if tasks:
+        with ThreadPoolExecutor(max_workers=min(len(tasks), 8)) as pool:
+            for pass_name, resp in pool.map(
+                lambda t: (t[0], t[1].analyze(t[2], blind=t[3])), tasks
+            ):
+                by_pass[pass_name].append(resp)
+
+    if mode == "sighted_only":
+        consensus = _build_pass(
+            by_pass["sighted"], blind=False, include_rule_based=True,
+            packet=sighted_packet, fair_value=fair_value,
+            current_price=current_price, skipped=skipped,
+        )
+        return DualPassResult(mode=mode, consensus=consensus)
+
+    consensus = _build_pass(
+        by_pass["blind"], blind=True, include_rule_based=True,
+        packet=blind_packet, fair_value=fair_value,
+        current_price=current_price, skipped=skipped,
+    )
+    critic = None
+    if mode == "dual":
+        critic = _build_pass(
+            by_pass["sighted"], blind=False, include_rule_based=False,
+            packet=sighted_packet, fair_value=fair_value,
+            current_price=current_price, skipped=[],
+        )
+    return DualPassResult(mode=mode, consensus=consensus, critic=critic)

@@ -70,6 +70,11 @@ class AnalystConfig:
     weight: float = 1.0
     cost_per_mtok_input: float = 0.0
     cost_per_mtok_output: float = 0.0
+    # Dual-pass participation: blind pass feeds the fair-value consensus,
+    # sighted pass is harvested for qualitative critique only. A cheap model
+    # can be critic-only (use_in_blind: false).
+    use_in_blind: bool = True
+    use_in_sighted: bool = True
 
 
 @dataclass

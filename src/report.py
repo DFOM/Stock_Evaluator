@@ -8,7 +8,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from src.ensemble import RULE_BASED_NAME, EnsembleResult
+from src.ensemble import RULE_BASED_NAME, DualPassResult, EnsembleResult
 from src.models import ArchetypeResult, CompanyData, FairValueResult, RatioSet, ScoreResult
 
 console = Console()
@@ -214,21 +214,38 @@ def _model_gap_label(gap: Optional[float]) -> str:
     return f"[bold red]{gap:.1%} (LARGE — rule-based assumptions and LLM judgment diverge sharply)[/bold red]"
 
 
-def _ensemble_panel(ensemble: EnsembleResult, currency: Optional[str]) -> Panel:
+def _analyst_line(r, currency: Optional[str]) -> str:
+    if r.ok and r.midpoint is not None:
+        if r.archetype_agreement is False:
+            stance = f"[yellow]disputes archetype → {r.suggested_archetype or '?'}[/yellow]"
+        else:
+            stance = "agrees with archetype"
+        tag = " [dim](rule-based)[/dim]" if r.analyst_name == RULE_BASED_NAME else ""
+        return (
+            f"  • {r.analyst_name}{tag}: {_money(r.fair_value_low, currency)} — {_money(r.fair_value_high, currency)}"
+            f" (mid {_money(r.midpoint, currency)}), conf {r.confidence:.0%}, {stance}"
+        )
+    return f"  • [red]{r.analyst_name}: FAILED — {r.error}[/red]"
+
+
+def _consensus_panel(dual: DualPassResult, currency: Optional[str]) -> Panel:
+    ens = dual.consensus
     lines: list[str] = []
 
-    if ensemble.consensus_mid is not None:
+    if ens.consensus_mid is not None:
         lines.append(
-            f"[bold]Consensus fair value:[/bold] {_money(ensemble.consensus_low, currency)}  —  "
-            f"{_money(ensemble.consensus_mid, currency)} (mid)  —  {_money(ensemble.consensus_high, currency)}"
+            f"[bold]Consensus fair value:[/bold] {_money(ens.consensus_low, currency)}  —  "
+            f"{_money(ens.consensus_mid, currency)} (mid)  —  {_money(ens.consensus_high, currency)}"
         )
-        conf = ensemble.overall_confidence
-        lines.append(f"[bold]Overall confidence:[/bold] {conf:.0%}" if conf is not None else "")
-        lines.append(f"[bold]AI disagreement:[/bold] {_ai_disagreement_label(ensemble.ai_disagreement)}")
-        lines.append(f"[bold]Model gap:[/bold]       {_model_gap_label(ensemble.model_gap)}")
-        if ensemble.price_deviation is not None:
-            lines.append(f"[bold]Price deviation:[/bold] {ensemble.price_deviation:.1%} (AI consensus mid vs market price)")
-        if ensemble.anchored_warning:
+        conf = ens.overall_confidence
+        if conf is not None:
+            lines.append(f"[bold]Overall confidence:[/bold] {conf:.0%}")
+        blind_tag = "blind " if ens.blind else ""
+        lines.append(f"[bold]AI disagreement ({blind_tag}ranges):[/bold] {_ai_disagreement_label(ens.ai_disagreement)}")
+        lines.append(f"[bold]Model gap (rule vs {blind_tag}AI):[/bold] {_model_gap_label(ens.model_gap)}")
+        if ens.price_deviation is not None:
+            lines.append(f"[bold]Price deviation:[/bold] {ens.price_deviation:.1%} (AI consensus mid vs market price)")
+        if ens.anchored_warning:
             lines.append(
                 "[bold yellow]⚠ AI consensus may be anchored to market price — treat agreement as low-information.[/bold yellow]"
             )
@@ -236,59 +253,84 @@ def _ensemble_panel(ensemble: EnsembleResult, currency: Optional[str]) -> Panel:
         lines.append("[dim]No usable analyst responses — consensus unavailable.[/dim]")
 
     lines.append("")
-    lines.append(f"[bold]Analysts ({ensemble.contributing_analysts} contributing):[/bold]")
-    for r in ensemble.responses:
-        if r.ok and r.midpoint is not None:
-            if r.archetype_agreement is False:
-                stance = f"[yellow]disputes archetype → {r.suggested_archetype or '?'}[/yellow]"
-            else:
-                stance = "agrees with archetype"
-            tag = " [dim](rule-based)[/dim]" if r.analyst_name == RULE_BASED_NAME else ""
-            lines.append(
-                f"  • {r.analyst_name}{tag}: {_money(r.fair_value_low, currency)} — {_money(r.fair_value_high, currency)}"
-                f" (mid {_money(r.midpoint, currency)}), conf {r.confidence:.0%}, {stance}"
-            )
-        else:
-            lines.append(f"  • [red]{r.analyst_name}: FAILED — {r.error}[/red]")
+    lines.append(f"[bold]Contributors ({ens.contributing_analysts}):[/bold]")
+    for r in ens.responses:
+        lines.append(_analyst_line(r, currency))
 
-    if ensemble.archetype_disputes:
+    if ens.archetype_disputes:
         lines.append("")
-        lines.append("[bold yellow]Archetype disputes:[/bold yellow]")
-        for d in ensemble.archetype_disputes:
+        lines.append("[bold yellow]Archetype disputes (blind pass):[/bold yellow]")
+        for d in ens.archetype_disputes:
             lines.append(f"  ⚠ {d}")
 
-    theses = [r for r in ensemble.responses if r.ok and r.one_paragraph_thesis and r.analyst_name != RULE_BASED_NAME]
-    if theses:
+    # The sighted passes' fair values, demoted to a footnote: anchoring-prone
+    # by construction (Phase 2.6 diagnostic), never part of the consensus.
+    critic = dual.critic
+    if critic is not None and critic.ai_consensus_mid is not None:
         lines.append("")
-        lines.append("[bold]Theses:[/bold]")
-        for r in theses:
-            lines.append(f"  [bold]{r.analyst_name}:[/bold] {r.one_paragraph_thesis}")
+        footnote = (
+            f"[dim]Sighted AI view (anchoring-prone, excluded from consensus): "
+            f"{_money(critic.ai_consensus_low, currency)} — {_money(critic.ai_consensus_high, currency)}"
+            f" (mid {_money(critic.ai_consensus_mid, currency)})[/dim]"
+        )
+        lines.append(footnote)
+        if critic.anchored_warning:
+            lines.append(
+                "[yellow]  ⚠ Sighted AI consensus may be anchored to market price — treat its agreement as low-information.[/yellow]"
+            )
+
+    if ens.skipped:
+        lines.append("")
+        for msg in ens.skipped:
+            lines.append(f"[yellow]⚠ {msg}[/yellow]")
+
+    title = {
+        "dual": "AI Fair Value Consensus (blind pass + rule engine)",
+        "blind_only": "AI Fair Value Consensus (blind pass + rule engine) [BLIND-ONLY DEBUG]",
+        "sighted_only": "AI Fair Value Consensus (SIGHTED-ONLY DEBUG — anchoring-prone)",
+    }[dual.mode]
+    return Panel("\n".join(lines), title=title, border_style="magenta")
+
+
+def _critic_panel(critic: EnsembleResult, total_cost: float) -> Panel:
+    lines: list[str] = []
+
+    if critic.archetype_disputes:
+        lines.append("[bold yellow]Archetype disputes:[/bold yellow]")
+        for d in critic.archetype_disputes:
+            lines.append(f"  ⚠ {d}")
+        lines.append("")
 
     risks: list[str] = []
-    for r in ensemble.responses:
+    for r in critic.responses:
         for risk in r.key_risks:
             if risk not in risks:
                 risks.append(risk)
     if risks:
-        lines.append("")
-        lines.append("[bold]Key risks flagged by analysts:[/bold]")
+        lines.append("[bold]Key risks:[/bold]")
         for risk in risks[:8]:
             lines.append(f"  • {risk}")
-
-    if ensemble.skipped:
         lines.append("")
-        for msg in ensemble.skipped:
-            lines.append(f"[yellow]⚠ {msg}[/yellow]")
 
-    lines.append("")
-    lines.append(f"[bold]Estimated AI cost for this analysis:[/bold] ${ensemble.total_cost:.4f}")
+    theses = [r for r in critic.responses if r.ok and r.one_paragraph_thesis]
+    if theses:
+        lines.append("[bold]Method critiques / theses:[/bold]")
+        for r in theses:
+            lines.append(f"  [bold]{r.analyst_name}:[/bold] {r.one_paragraph_thesis}")
+        lines.append("")
 
-    title = "AI Analyst Ensemble (PRICE-BLIND)" if ensemble.blind else "AI Analyst Ensemble"
-    return Panel("\n".join(l for l in lines if l is not None), title=title, border_style="magenta")
+    failed = [r for r in critic.responses if not r.ok]
+    for r in failed:
+        lines.append(f"[red]⚠ {r.analyst_name} (sighted pass) FAILED — {r.error}[/red]")
+    if failed:
+        lines.append("")
 
+    if not lines:
+        lines.append("[dim]No qualitative output from the sighted pass.[/dim]")
+        lines.append("")
 
-def render_ensemble(ensemble: EnsembleResult, currency: Optional[str]) -> None:
-    console.print(_ensemble_panel(ensemble, currency))
+    lines.append(f"[bold]Estimated AI cost (both passes):[/bold] ${total_cost:.4f}")
+    return Panel("\n".join(lines), title="Critic Notes (sighted pass)", border_style="yellow")
 
 
 def render_report(
@@ -297,6 +339,7 @@ def render_report(
     archetype: ArchetypeResult,
     scores: ScoreResult,
     fair_value: FairValueResult,
+    dual: Optional[DualPassResult] = None,
 ) -> None:
     console.print(_header(data))
     if data.warnings:
@@ -304,7 +347,16 @@ def render_report(
     console.print(_archetype_panel(archetype))
     console.print(_ratios_table(ratios))
     console.print(f"[dim]Ratio data completeness: {ratios.completeness:.0%}[/dim]")
+
+    if dual is not None:
+        console.print(_consensus_panel(dual, data.currency))
+        if dual.critic is not None:
+            console.print(_critic_panel(dual.critic, dual.total_cost))
+
     console.print(_pillar_table(scores))
     console.print(_scores_panel(scores))
     console.print(_red_flags_panel(scores))
     console.print(_fair_value_panel(fair_value))
+
+    if dual is not None and dual.critic is None:
+        console.print(f"[bold]Estimated AI cost for this analysis:[/bold] ${dual.total_cost:.4f}")
