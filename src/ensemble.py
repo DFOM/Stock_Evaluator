@@ -42,7 +42,16 @@ class EnsembleResult:
     consensus_low: Optional[float] = None
     consensus_mid: Optional[float] = None
     consensus_high: Optional[float] = None
-    disagreement_index: Optional[float] = None
+
+    # Two distinct diagnostics, deliberately not blended into one number:
+    # ai_disagreement — spread across the AI analysts only ("this company is
+    #   hard to value"); drives the confidence penalty.
+    # model_gap — distance between the rule-based midpoint and the AI
+    #   consensus midpoint ("our rule-based assumptions differ from LLM
+    #   judgment"); displayed, but does not penalize confidence.
+    ai_consensus_mid: Optional[float] = None
+    ai_disagreement: Optional[float] = None
+    model_gap: Optional[float] = None
     overall_confidence: Optional[float] = None
 
     archetype_disputes: list[str] = field(default_factory=list)
@@ -54,7 +63,9 @@ class EnsembleResult:
             "consensus_low": self.consensus_low,
             "consensus_mid": self.consensus_mid,
             "consensus_high": self.consensus_high,
-            "disagreement_index": self.disagreement_index,
+            "ai_consensus_mid": self.ai_consensus_mid,
+            "ai_disagreement": self.ai_disagreement,
+            "model_gap": self.model_gap,
             "overall_confidence": self.overall_confidence,
             "archetype_disputes": self.archetype_disputes,
             "contributing_analysts": self.contributing_analysts,
@@ -137,9 +148,10 @@ def _rule_based_response(fair_value: FairValueResult, weight: float) -> Optional
 
 
 def _consensus(result: EnsembleResult, contributors: list[AnalystResponse]) -> None:
-    """Weighted consensus + disagreement index over analysts that returned a
-    usable range. Effective weight = configured weight x analyst confidence,
-    so a shaky opinion moves the consensus less but still shows in the spread."""
+    """Weighted consensus over analysts that returned a usable range, plus
+    the two split diagnostics (ai_disagreement, model_gap). Effective weight
+    = configured weight x analyst confidence, so a shaky opinion moves the
+    consensus less but still shows in the spread."""
     weighted = [
         (r, max(r.weight * r.confidence, 1e-6))
         for r in contributors
@@ -154,19 +166,30 @@ def _consensus(result: EnsembleResult, contributors: list[AnalystResponse]) -> N
     result.consensus_mid = round(sum(r.midpoint * w for r, w in weighted) / total_w, 2)
     result.contributing_analysts = len(weighted)
 
-    # Disagreement index: weighted std dev of midpoints / |consensus midpoint|
-    # (a coefficient of variation). 0 = full agreement; 0.30 means midpoints
-    # spread ~30% around the consensus.
-    if len(weighted) >= 2 and result.consensus_mid:
-        mean_mid = sum(r.midpoint * w for r, w in weighted) / total_w
-        variance = sum(w * (r.midpoint - mean_mid) ** 2 for r, w in weighted) / total_w
-        result.disagreement_index = round(math.sqrt(variance) / abs(result.consensus_mid), 3)
-    else:
-        # A single opinion can't disagree with itself — report n/a, not 0.
-        result.disagreement_index = None
+    ai = [(r, w) for r, w in weighted if r.analyst_name != RULE_BASED_NAME]
+    rule_mid = next((r.midpoint for r, _ in weighted if r.analyst_name == RULE_BASED_NAME), None)
 
+    if ai:
+        ai_w = sum(w for _, w in ai)
+        ai_mean = sum(r.midpoint * w for r, w in ai) / ai_w
+        result.ai_consensus_mid = round(ai_mean, 2)
+
+        # AI disagreement: weighted std dev of AI midpoints / |AI consensus
+        # midpoint| (coefficient of variation). Needs 2+ AI analysts.
+        if len(ai) >= 2 and ai_mean:
+            variance = sum(w * (r.midpoint - ai_mean) ** 2 for r, w in ai) / ai_w
+            result.ai_disagreement = round(math.sqrt(variance) / abs(ai_mean), 3)
+
+        # Model gap: how far the rule-based engine sits from AI judgment.
+        if rule_mid is not None and ai_mean:
+            result.model_gap = round(abs(rule_mid - ai_mean) / abs(ai_mean), 3)
+
+    # Confidence keys off AI disagreement only: a wide AI spread means the
+    # company is genuinely hard to value. A large model_gap is a diagnostic
+    # for OUR assumptions and is surfaced separately without penalizing
+    # confidence.
     avg_conf = sum(r.confidence * w for r, w in weighted) / total_w
-    di = result.disagreement_index or 0.0
+    di = result.ai_disagreement if result.ai_disagreement is not None else 0.0
     penalty = max(DISAGREEMENT_PENALTY_FLOOR, 1.0 - di)
     result.overall_confidence = round(min(1.0, avg_conf * penalty), 2)
 

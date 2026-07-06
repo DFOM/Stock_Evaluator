@@ -194,14 +194,24 @@ def _fair_value_panel(fv: FairValueResult) -> Panel:
     return Panel("\n".join(lines), title="Rule-Based Fair Value", border_style="blue")
 
 
-def _disagreement_label(di: Optional[float]) -> str:
+def _ai_disagreement_label(di: Optional[float]) -> str:
     if di is None:
-        return "n/a (needs 2+ contributing analysts)"
+        return "n/a (needs 2+ AI analysts)"
     if di < 0.10:
-        return f"[bold green]{di:.1%} (analysts broadly agree)[/bold green]"
+        return f"[bold green]{di:.1%} (AI analysts broadly agree)[/bold green]"
     if di < 0.25:
-        return f"[bold yellow]{di:.1%} (moderate disagreement)[/bold yellow]"
-    return f"[bold red]{di:.1%} (HIGH — analysts see very different fair values; treat consensus with caution)[/bold red]"
+        return f"[bold yellow]{di:.1%} (moderate — some genuine valuation uncertainty)[/bold yellow]"
+    return f"[bold red]{di:.1%} (HIGH — AI analysts see very different fair values; hard to value)[/bold red]"
+
+
+def _model_gap_label(gap: Optional[float]) -> str:
+    if gap is None:
+        return "n/a (needs rule-based estimate + AI consensus)"
+    if gap < 0.20:
+        return f"[bold green]{gap:.1%} (rule-based engine and AI judgment broadly aligned)[/bold green]"
+    if gap < 0.50:
+        return f"[bold yellow]{gap:.1%} (notable — review the rule-based assumptions)[/bold yellow]"
+    return f"[bold red]{gap:.1%} (LARGE — rule-based assumptions and LLM judgment diverge sharply)[/bold red]"
 
 
 def _ensemble_panel(ensemble: EnsembleResult, currency: Optional[str]) -> Panel:
@@ -214,7 +224,8 @@ def _ensemble_panel(ensemble: EnsembleResult, currency: Optional[str]) -> Panel:
         )
         conf = ensemble.overall_confidence
         lines.append(f"[bold]Overall confidence:[/bold] {conf:.0%}" if conf is not None else "")
-        lines.append(f"[bold]Disagreement index:[/bold] {_disagreement_label(ensemble.disagreement_index)}")
+        lines.append(f"[bold]AI disagreement:[/bold] {_ai_disagreement_label(ensemble.ai_disagreement)}")
+        lines.append(f"[bold]Model gap:[/bold]       {_model_gap_label(ensemble.model_gap)}")
     else:
         lines.append("[dim]No usable analyst responses — consensus unavailable.[/dim]")
 
