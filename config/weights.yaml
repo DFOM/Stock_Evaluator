@@ -50,6 +50,9 @@ valuation_assumptions:
 # risk with strong scores elsewhere.
 red_flags:
   negative_equity_cap: 3.0
+  # Negative equity is downgraded to an informational note (no cap) when
+  # interest coverage is at least this AND free cash flow is positive.
+  negative_equity_healthy_coverage: 4.0
   interest_coverage_critical: 1.0
   interest_coverage_cap: 4.0
   current_ratio_critical: 0.5

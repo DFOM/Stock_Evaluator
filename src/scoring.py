@@ -131,7 +131,12 @@ def _financial_health_pillar(ratios: RatioSet, archetype: str) -> PillarScore:
     floor_d2e, ceil_d2e, floor_cr, ceil_cr, floor_ic, ceil_ic, floor_nde, ceil_nde = _FH_BANDS.get(
         archetype, _FH_BANDS["cash_cow"]
     )
-    b.add(lower_is_better(ratios.debt_to_equity, floor_d2e, ceil_d2e), 3, f"debt/equity {_ratio(ratios.debt_to_equity)}")
+    # Negative D/E means negative book equity, not "less debt than zero" —
+    # scoring it on the lower-is-better band would award a perfect 10.
+    # Exclude it and let coverage/net-debt metrics carry the pillar.
+    d2e = ratios.debt_to_equity if (ratios.debt_to_equity is None or ratios.debt_to_equity >= 0) else None
+    d2e_note = f"debt/equity {_ratio(ratios.debt_to_equity)}" if d2e is not None else "debt/equity not meaningful (negative book equity)"
+    b.add(lower_is_better(d2e, floor_d2e, ceil_d2e), 3, d2e_note)
     b.add(higher_is_better(ratios.current_ratio, floor_cr, ceil_cr), 2, f"current ratio {_ratio(ratios.current_ratio)}")
     b.add(higher_is_better(ratios.interest_coverage, floor_ic, ceil_ic), 3, f"interest coverage {_ratio(ratios.interest_coverage)}x")
     b.add(lower_is_better(ratios.net_debt_to_ebitda, floor_nde, ceil_nde), 2, f"net debt/EBITDA {_ratio(ratios.net_debt_to_ebitda)}x")
@@ -232,16 +237,33 @@ def _ratio(v: Optional[float]) -> str:
 # Red-flag veto layer
 # --------------------------------------------------------------------------
 
-def detect_red_flags(ratios: RatioSet, archetype: str, config: dict[str, Any]) -> list[RedFlag]:
+def detect_red_flags(ratios: RatioSet, archetype: str, config: dict[str, Any]) -> tuple[list[RedFlag], list[str]]:
+    """Returns (capping red flags, informational notes). A finding is only a
+    veto when the underlying risk is real — e.g. negative book equity caused
+    by years of buybacks at a company that comfortably services its debt is
+    surfaced as a note, not a score cap."""
     rf = config["red_flags"]
     flags: list[RedFlag] = []
+    info_notes: list[str] = []
 
     if ratios.debt_to_equity is not None and ratios.debt_to_equity < 0:
-        flags.append(RedFlag(
-            "negative_equity",
-            "Negative shareholder equity — the balance sheet is technically insolvent on a book-value basis.",
-            rf["negative_equity_cap"],
-        ))
+        healthy_coverage = (
+            ratios.interest_coverage is not None
+            and ratios.interest_coverage >= rf["negative_equity_healthy_coverage"]
+        )
+        positive_fcf = ratios.free_cash_flow is not None and ratios.free_cash_flow > 0
+        if healthy_coverage and positive_fcf:
+            info_notes.append(
+                f"Negative book equity, but interest coverage is healthy ({ratios.interest_coverage:.1f}x) and "
+                "free cash flow is positive — consistent with buyback-driven negative equity, not distress. No score cap applied."
+            )
+        else:
+            flags.append(RedFlag(
+                "negative_equity",
+                "Negative shareholder equity without the debt-service strength to explain it away — "
+                "the balance sheet is technically insolvent on a book-value basis.",
+                rf["negative_equity_cap"],
+            ))
 
     if archetype != "financial" and ratios.interest_coverage is not None and ratios.interest_coverage < rf["interest_coverage_critical"]:
         flags.append(RedFlag(
@@ -275,7 +297,7 @@ def detect_red_flags(ratios: RatioSet, archetype: str, config: dict[str, Any]) -
             rf["negative_fcf_and_earnings_cap"],
         ))
 
-    return flags
+    return flags, info_notes
 
 
 # --------------------------------------------------------------------------
@@ -344,7 +366,7 @@ def score_company(data: CompanyData, ratios: RatioSet, archetype: ArchetypeResul
     investor_score = _weighted_score(pillars, weights["investor"])
     trader_score = _weighted_score(pillars, weights["trader"])
 
-    red_flags = detect_red_flags(ratios, arch, config)
+    red_flags, info_notes = detect_red_flags(ratios, arch, config)
     if red_flags:
         cap = min(f.score_cap for f in red_flags)
         if investor_score is not None:
@@ -361,4 +383,5 @@ def score_company(data: CompanyData, ratios: RatioSet, archetype: ArchetypeResul
         quadrant=quadrant,
         quadrant_reason=quadrant_reason,
         red_flags=red_flags,
+        info_notes=info_notes,
     )

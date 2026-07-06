@@ -158,13 +158,16 @@ def _scores_panel(scores: ScoreResult) -> Panel:
 
 
 def _red_flags_panel(scores: ScoreResult) -> Panel:
-    if not scores.red_flags:
-        return Panel("No red flags detected.", title="Red Flags", border_style="green")
     lines = []
     for f in scores.red_flags:
         lines.append(f"[bold red]● {f.name}[/bold red] (caps score at {f.score_cap:.1f}/10)")
         lines.append(f"    {f.description}")
-    return Panel("\n".join(lines), title="Red Flags", border_style="red")
+    for note in scores.info_notes:
+        lines.append(f"[yellow]ℹ {note}[/yellow]")
+    if not lines:
+        return Panel("No red flags detected.", title="Red Flags", border_style="green")
+    style = "red" if scores.red_flags else "yellow"
+    return Panel("\n".join(lines), title="Red Flags & Notes", border_style=style)
 
 
 def _fair_value_panel(fv: FairValueResult) -> Panel:

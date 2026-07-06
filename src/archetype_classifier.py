@@ -17,6 +17,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.models import ArchetypeResult, CompanyData, RatioSet
+from src.ratio_engine import compute_cash_runway
+
+# A cash-burning company counts as a funded pre-profit grower (not a
+# turnaround) when it's still growing and holds at least this many years of
+# cash at the current burn rate.
+MIN_RUNWAY_YEARS = 2.0
 
 FINANCIAL_INDUSTRY_KEYWORDS = (
     "bank", "insurance", "capital markets", "asset management", "credit services",
@@ -83,9 +89,21 @@ def classify(data: CompanyData, ratios: RatioSet) -> ArchetypeResult:
     if ratios.dividend_yield is not None and ratios.dividend_yield > 0.04:
         ap.add(1, f"high dividend yield ({ratios.dividend_yield:.1%})")
 
+    # Pre-profit vs distressed disambiguation: burning cash while growing
+    # fast with years of runway is the normal shape of a young growth
+    # company, not distress. Turnaround signals below are gated on this.
+    rg = ratios.revenue_growth_yoy
+    runway = compute_cash_runway(data, ratios)
+    burning_cash = ratios.free_cash_flow is not None and ratios.free_cash_flow < 0
+    still_growing = (rg is not None and rg > 0.10) or (
+        ratios.revenue_cagr_3y is not None and ratios.revenue_cagr_3y > 0.20
+    )
+    pre_profit_growth = (
+        burning_cash and still_growing and runway is not None and runway >= MIN_RUNWAY_YEARS
+    )
+
     # ---------------- growth ----------------
     gr = votes["growth"]
-    rg = ratios.revenue_growth_yoy
     if rg is not None:
         if rg > 0.40:
             gr.add(5, f"revenue growth {rg:.1%} > 40% (hyper-growth)")
@@ -105,17 +123,30 @@ def classify(data: CompanyData, ratios: RatioSet) -> ArchetypeResult:
         gr.add(1, "pays no dividend (reinvesting for growth)")
     if sector.lower() == "technology" and rg is not None and rg > 0.10:
         gr.add(1, f"technology sector with double-digit growth")
+    if pre_profit_growth:
+        gr.add(3, f"pre-profit but well funded: ~{runway:.1f} years of cash runway at current burn")
 
     # ---------------- turnaround ----------------
     tu = votes["turnaround"]
-    if ratios.debt_to_equity is not None and ratios.debt_to_equity < 0:
+    # Negative equity alone isn't distress — mature companies buy back stock
+    # past book equity while comfortably servicing debt (DPZ, MCD). Only
+    # treat it as a distress vote when debt service or cash generation is
+    # actually strained.
+    healthy_coverage = ratios.interest_coverage is not None and ratios.interest_coverage >= 4.0
+    positive_fcf = ratios.free_cash_flow is not None and ratios.free_cash_flow > 0
+    if ratios.debt_to_equity is not None and ratios.debt_to_equity < 0 and not (healthy_coverage and positive_fcf):
         tu.add(4, "negative shareholder equity (balance sheet distress)")
     if rg is not None and rg < -0.05:
         tu.add(2, f"revenue declining ({rg:.1%} YoY)")
-    if ratios.net_margin is not None and ratios.net_margin < 0 and ratios.free_cash_flow is not None and ratios.free_cash_flow < 0:
-        tu.add(3, "negative net margin AND negative free cash flow simultaneously")
-    if ratios.interest_coverage is not None and ratios.interest_coverage < 1.5:
-        tu.add(2, f"interest coverage {ratios.interest_coverage:.1f}x is dangerously thin")
+    if ratios.revenue_cagr_3y is not None and ratios.revenue_cagr_3y < -0.03 and (rg is None or rg < 0.05):
+        tu.add(2, f"multi-year revenue deterioration (3y CAGR {ratios.revenue_cagr_3y:.1%})")
+    if not pre_profit_growth:
+        if ratios.net_margin is not None and ratios.net_margin < 0 and burning_cash:
+            tu.add(3, "negative net margin AND negative free cash flow simultaneously")
+        if ratios.interest_coverage is not None and ratios.interest_coverage < 1.5:
+            tu.add(2, f"interest coverage {ratios.interest_coverage:.1f}x is dangerously thin")
+    if burning_cash and runway is not None and runway < MIN_RUNWAY_YEARS:
+        tu.add(3, f"only ~{runway:.1f} years of cash runway at current burn")
     if ratios.current_ratio is not None and ratios.current_ratio < 1 and ratios.net_debt_to_ebitda is not None and ratios.net_debt_to_ebitda > 5:
         tu.add(2, "current ratio < 1 combined with net debt > 5x EBITDA")
 

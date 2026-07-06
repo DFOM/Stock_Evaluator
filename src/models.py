@@ -145,6 +145,9 @@ class ScoreResult:
     quadrant: str
     quadrant_reason: str
     red_flags: list[RedFlag] = field(default_factory=list)
+    # Findings worth surfacing that do NOT cap the score (e.g. a red flag
+    # that was investigated and downgraded, like buyback-driven negative equity).
+    info_notes: list[str] = field(default_factory=list)
 
 
 @dataclass

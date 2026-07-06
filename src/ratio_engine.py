@@ -60,6 +60,25 @@ def _cagr(latest: Optional[float], oldest: Optional[float], years: int) -> Optio
     return (latest / oldest) ** (1 / years) - 1
 
 
+def compute_cash_runway(data: CompanyData, ratios: RatioSet) -> Optional[float]:
+    """Years of cash left at the current burn rate. Only meaningful for
+    cash-burning companies — returns None when FCF is positive/unknown or no
+    cash balance is available. Kept out of RatioSet so a profitable company's
+    'not applicable' doesn't read as missing data in the completeness score."""
+    fcf = _clean(ratios.free_cash_flow)
+    if fcf is None or fcf >= 0:
+        return None
+    info = data.info or {}
+    cash = _clean(info.get("totalCash"))
+    if cash is None:
+        cash = _row(data.balance_sheet, "Cash Cash Equivalents And Short Term Investments")
+    if cash is None:
+        cash = _row(data.balance_sheet, "Cash And Cash Equivalents")
+    if cash is None:
+        return None
+    return cash / abs(fcf)
+
+
 class _Tracker:
     """Wraps RatioSet field assignment so we can record which fields were
     never resolved, for the confidence-degradation logic downstream."""

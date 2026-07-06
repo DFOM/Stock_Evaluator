@@ -53,6 +53,7 @@ def build_briefing_packet(
             {"name": f.name, "description": f.description, "score_cap": f.score_cap}
             for f in scores.red_flags
         ],
+        "info_notes": scores.info_notes,
         "fair_value_rule_based": {
             "method": fair_value.method,
             "low": fair_value.low,
