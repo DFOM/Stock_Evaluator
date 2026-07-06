@@ -226,6 +226,12 @@ def _ensemble_panel(ensemble: EnsembleResult, currency: Optional[str]) -> Panel:
         lines.append(f"[bold]Overall confidence:[/bold] {conf:.0%}" if conf is not None else "")
         lines.append(f"[bold]AI disagreement:[/bold] {_ai_disagreement_label(ensemble.ai_disagreement)}")
         lines.append(f"[bold]Model gap:[/bold]       {_model_gap_label(ensemble.model_gap)}")
+        if ensemble.price_deviation is not None:
+            lines.append(f"[bold]Price deviation:[/bold] {ensemble.price_deviation:.1%} (AI consensus mid vs market price)")
+        if ensemble.anchored_warning:
+            lines.append(
+                "[bold yellow]⚠ AI consensus may be anchored to market price — treat agreement as low-information.[/bold yellow]"
+            )
     else:
         lines.append("[dim]No usable analyst responses — consensus unavailable.[/dim]")
 
@@ -277,7 +283,8 @@ def _ensemble_panel(ensemble: EnsembleResult, currency: Optional[str]) -> Panel:
     lines.append("")
     lines.append(f"[bold]Estimated AI cost for this analysis:[/bold] ${ensemble.total_cost:.4f}")
 
-    return Panel("\n".join(l for l in lines if l is not None), title="AI Analyst Ensemble", border_style="magenta")
+    title = "AI Analyst Ensemble (PRICE-BLIND)" if ensemble.blind else "AI Analyst Ensemble"
+    return Panel("\n".join(l for l in lines if l is not None), title=title, border_style="magenta")
 
 
 def render_ensemble(ensemble: EnsembleResult, currency: Optional[str]) -> None:

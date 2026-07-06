@@ -9,7 +9,7 @@ from __future__ import annotations
 import anthropic
 from openai import OpenAI
 
-from src.analyst_base import SYSTEM_PROMPT, AnalystAdapter, AnalystConfig
+from src.analyst_base import AnalystAdapter, AnalystConfig
 
 REQUEST_TIMEOUT_SECONDS = 180.0
 # Generous cap: reasoning models (GPT-5.x etc.) burn internal reasoning tokens
@@ -25,11 +25,11 @@ class AnthropicAnalyst(AnalystAdapter):
         super().__init__(config, api_key)
         self._client = anthropic.Anthropic(api_key=api_key, timeout=REQUEST_TIMEOUT_SECONDS)
 
-    def _complete(self, messages: list[dict[str, str]]) -> tuple[str, int, int]:
+    def _complete(self, system: str, messages: list[dict[str, str]]) -> tuple[str, int, int]:
         response = self._client.messages.create(
             model=self.config.model,
             max_tokens=MAX_OUTPUT_TOKENS,
-            system=SYSTEM_PROMPT,
+            system=system,
             messages=messages,
         )
         text = "".join(block.text for block in response.content if block.type == "text")
@@ -47,8 +47,8 @@ class OpenAICompatibleAnalyst(AnalystAdapter):
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
 
-    def _complete(self, messages: list[dict[str, str]]) -> tuple[str, int, int]:
-        full_messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
+    def _complete(self, system: str, messages: list[dict[str, str]]) -> tuple[str, int, int]:
+        full_messages = [{"role": "system", "content": system}, *messages]
         # Start with the modern param names + JSON mode (which guarantees
         # syntactically valid JSON — some models otherwise emit near-JSON with
         # mismatched brackets). Compatible providers that reject either

@@ -37,6 +37,17 @@ matching exactly this schema:
   "one_paragraph_thesis": <string, one paragraph summarizing your investment thesis>
 }"""
 
+BLIND_SYSTEM_PROMPT = SYSTEM_PROMPT + """
+
+PRICE-BLIND MODE: You have deliberately NOT been given the market price, market cap, \
+enterprise value, any price-derived multiples, or the rule-based fair value range. Do NOT \
+recall or guess this company's market price from memory, and do not let any remembered price \
+or valuation influence you. Derive an INDEPENDENT per-share fair value range strictly from \
+the fundamentals provided: financial statements, growth rates, margins, returns on capital, \
+leverage, cash flow, and share count. fair_value_low and fair_value_high must still be \
+per-share values in the company's listing currency. Omit the "valuation" and "momentum" \
+pillar scores from pillar_scores (you have no price data to score them with)."""
+
 RETRY_PROMPT = (
     "Your previous response was not valid JSON matching the required schema. "
     "Respond again with ONLY the JSON object — no markdown fences, no explanation, no text outside the JSON."
@@ -148,21 +159,22 @@ class AnalystAdapter(ABC):
         self.api_key = api_key
 
     @abstractmethod
-    def _complete(self, messages: list[dict[str, str]]) -> tuple[str, int, int]:
+    def _complete(self, system: str, messages: list[dict[str, str]]) -> tuple[str, int, int]:
         """Send a chat exchange to the provider. `messages` alternates
-        user/assistant roles (the system prompt is handled per-provider).
-        Returns (response_text, input_tokens, output_tokens). May raise —
-        analyze() catches everything."""
+        user/assistant roles; `system` is the system prompt (wired in the
+        provider's own format). Returns (response_text, input_tokens,
+        output_tokens). May raise — analyze() catches everything."""
         raise NotImplementedError
 
-    def analyze(self, briefing_packet: dict[str, Any]) -> AnalystResponse:
+    def analyze(self, briefing_packet: dict[str, Any], blind: bool = False) -> AnalystResponse:
         resp = AnalystResponse(analyst_name=self.config.name, weight=self.config.weight)
+        system = BLIND_SYSTEM_PROMPT if blind else SYSTEM_PROMPT
         packet_json = json.dumps(briefing_packet, default=str)
         messages = [{"role": "user", "content": f"Analyze this company:\n\n{packet_json}"}]
 
         total_in = total_out = 0
         try:
-            text, tin, tout = self._complete(messages)
+            text, tin, tout = self._complete(system, messages)
             total_in, total_out = tin, tout
             try:
                 data = extract_json(text)
@@ -172,7 +184,7 @@ class AnalystAdapter(ABC):
                     {"role": "assistant", "content": text},
                     {"role": "user", "content": RETRY_PROMPT},
                 ]
-                text, tin, tout = self._complete(messages)
+                text, tin, tout = self._complete(system, messages)
                 total_in += tin
                 total_out += tout
                 data = extract_json(text)

@@ -54,6 +54,14 @@ class EnsembleResult:
     model_gap: Optional[float] = None
     overall_confidence: Optional[float] = None
 
+    # Anchoring diagnostics: how far the AI consensus sits from the market
+    # price. In sighted mode, a near-zero deviation combined with near-zero
+    # AI disagreement is suspicious — both models likely anchored to the
+    # price in the packet, so their "agreement" is low-information.
+    blind: bool = False
+    price_deviation: Optional[float] = None
+    anchored_warning: bool = False
+
     archetype_disputes: list[str] = field(default_factory=list)
     total_cost: float = 0.0
     contributing_analysts: int = 0
@@ -67,6 +75,8 @@ class EnsembleResult:
             "ai_disagreement": self.ai_disagreement,
             "model_gap": self.model_gap,
             "overall_confidence": self.overall_confidence,
+            "price_deviation": self.price_deviation,
+            "anchored_warning": self.anchored_warning,
             "archetype_disputes": self.archetype_disputes,
             "contributing_analysts": self.contributing_analysts,
             "skipped": self.skipped,
@@ -194,19 +204,24 @@ def _consensus(result: EnsembleResult, contributors: list[AnalystResponse]) -> N
     result.overall_confidence = round(min(1.0, avg_conf * penalty), 2)
 
 
+ANCHORED_THRESHOLD = 0.05  # both price_deviation and ai_disagreement below this -> warn
+
+
 def run_ensemble(
     briefing_packet: dict[str, Any],
     fair_value: FairValueResult,
     only_names: Optional[list[str]] = None,
+    blind: bool = False,
+    current_price: Optional[float] = None,
 ) -> EnsembleResult:
-    result = EnsembleResult()
+    result = EnsembleResult(blind=blind)
     roster, skipped = load_roster(only_names)
     result.skipped = skipped
 
     adapters = [ADAPTERS[cfg.provider_type](cfg, key) for cfg, key in roster]
     if adapters:
         with ThreadPoolExecutor(max_workers=min(len(adapters), 6)) as pool:
-            result.responses = list(pool.map(lambda a: a.analyze(briefing_packet), adapters))
+            result.responses = list(pool.map(lambda a: a.analyze(briefing_packet, blind=blind), adapters))
 
     result.total_cost = sum(r.estimated_cost for r in result.responses)
 
@@ -228,4 +243,16 @@ def run_ensemble(
             )
 
     _consensus(result, contributors)
+
+    if current_price and result.ai_consensus_mid:
+        result.price_deviation = round(abs(result.ai_consensus_mid / current_price - 1), 3)
+        # Only meaningful in sighted mode: blind analysts never saw the price,
+        # so a small deviation there is genuine agreement, not anchoring.
+        result.anchored_warning = (
+            not blind
+            and result.price_deviation < ANCHORED_THRESHOLD
+            and result.ai_disagreement is not None
+            and result.ai_disagreement < ANCHORED_THRESHOLD
+        )
+
     return result

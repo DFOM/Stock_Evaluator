@@ -18,6 +18,7 @@ def append_run(ticker: str, ensemble: EnsembleResult) -> None:
     record: dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "ticker": ticker,
+        "blind": ensemble.blind,
         "analysts": [r.as_log_dict() for r in ensemble.responses],
         "consensus": ensemble.as_log_dict(),
         "total_input_tokens": sum(r.input_tokens for r in ensemble.responses),

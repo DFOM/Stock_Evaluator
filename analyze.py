@@ -15,7 +15,7 @@ import argparse
 import sys
 
 from src.archetype_classifier import classify
-from src.briefing import build_briefing_packet
+from src.briefing import build_briefing_packet, redact_for_blind
 from src.config import load_config
 from src.data_fetcher import fetch_company_data
 from src.ensemble import run_ensemble
@@ -26,7 +26,7 @@ from src.run_log import append_run
 from src.scoring import score_company
 
 
-def analyze_ticker(ticker: str, config: dict, use_ai: bool, only_analysts: list[str] | None) -> None:
+def analyze_ticker(ticker: str, config: dict, use_ai: bool, only_analysts: list[str] | None, blind: bool = False) -> None:
     console.rule(f"[bold]{ticker.upper()}[/bold]")
     data = fetch_company_data(ticker)
 
@@ -45,8 +45,13 @@ def analyze_ticker(ticker: str, config: dict, use_ai: bool, only_analysts: list[
         return
 
     briefing = build_briefing_packet(data, ratios, archetype, scores, fair_value)
-    with console.status("Consulting AI analyst ensemble..."):
-        ensemble = run_ensemble(briefing, fair_value, only_analysts)
+    if blind:
+        briefing = redact_for_blind(briefing)
+    status = "Consulting AI analyst ensemble (price-blind)..." if blind else "Consulting AI analyst ensemble..."
+    with console.status(status):
+        ensemble = run_ensemble(
+            briefing, fair_value, only_analysts, blind=blind, current_price=data.current_price
+        )
     render_ensemble(ensemble, data.currency)
     append_run(data.ticker, ensemble)
 
@@ -60,6 +65,12 @@ def main() -> None:
         metavar="NAME1,NAME2",
         help="Comma-separated subset of analysts from config/analysts.yaml to consult (overrides 'active' flags).",
     )
+    parser.add_argument(
+        "--blind",
+        action="store_true",
+        help="Price-blind mode: analysts get a redacted briefing packet with no price, market cap, "
+        "or price-derived multiples, and must derive fair value from fundamentals alone.",
+    )
     args = parser.parse_args()
 
     only_analysts = [a.strip() for a in args.analysts.split(",") if a.strip()] if args.analysts else None
@@ -67,7 +78,7 @@ def main() -> None:
     config = load_config()
     for ticker in args.tickers:
         try:
-            analyze_ticker(ticker, config, use_ai=not args.no_ai, only_analysts=only_analysts)
+            analyze_ticker(ticker, config, use_ai=not args.no_ai, only_analysts=only_analysts, blind=args.blind)
         except Exception as e:
             console.print(f"[bold red]Failed to analyze {ticker}: {e}[/bold red]")
         console.print()
