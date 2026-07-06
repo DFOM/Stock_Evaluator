@@ -1,0 +1,64 @@
+# Pillar weight profiles and valuation assumptions, kept out of code so they
+# can be tuned without touching Python. Six pillars: valuation, quality,
+# growth, financial_health, macro, momentum. Each archetype has two profiles:
+#   investor - years-long horizon, momentum barely matters
+#   trader   - weeks/months horizon, momentum + catalysts dominate
+# All six weights within a profile must sum to 1.0.
+
+archetypes:
+  cash_cow:
+    pillar_weights:
+      investor: {valuation: 0.30, quality: 0.25, growth: 0.10, financial_health: 0.20, macro: 0.05, momentum: 0.10}
+      trader:   {valuation: 0.10, quality: 0.05, growth: 0.05, financial_health: 0.10, macro: 0.05, momentum: 0.65}
+    margin_of_safety: 0.20
+
+  growth:
+    pillar_weights:
+      investor: {valuation: 0.20, quality: 0.15, growth: 0.30, financial_health: 0.20, macro: 0.05, momentum: 0.10}
+      trader:   {valuation: 0.05, quality: 0.05, growth: 0.15, financial_health: 0.05, macro: 0.05, momentum: 0.65}
+    margin_of_safety: 0.35
+
+  financial:
+    pillar_weights:
+      investor: {valuation: 0.30, quality: 0.25, growth: 0.10, financial_health: 0.25, macro: 0.08, momentum: 0.02}
+      trader:   {valuation: 0.10, quality: 0.05, growth: 0.05, financial_health: 0.15, macro: 0.05, momentum: 0.60}
+    margin_of_safety: 0.20
+
+  asset_play:
+    pillar_weights:
+      investor: {valuation: 0.35, quality: 0.15, growth: 0.10, financial_health: 0.25, macro: 0.10, momentum: 0.05}
+      trader:   {valuation: 0.10, quality: 0.05, growth: 0.05, financial_health: 0.10, macro: 0.05, momentum: 0.65}
+    margin_of_safety: 0.25
+
+  turnaround:
+    pillar_weights:
+      investor: {valuation: 0.20, quality: 0.10, growth: 0.10, financial_health: 0.45, macro: 0.10, momentum: 0.05}
+      trader:   {valuation: 0.10, quality: 0.05, growth: 0.05, financial_health: 0.30, macro: 0.05, momentum: 0.45}
+    margin_of_safety: 0.40
+
+# Rule-based fair-value assumptions (Phase 1, no AI analysts yet).
+valuation_assumptions:
+  risk_free_rate: 0.045          # proxy for 10y UST yield; revisit periodically
+  equity_risk_premium: 0.045     # Damodaran-style broad US ERP proxy
+  terminal_growth_rate: 0.025    # long-run GDP+inflation proxy for DCF terminal value
+  dcf_projection_years: 10
+  fcf_growth_cap: 0.15           # cap extrapolated historical FCF growth to keep DCF sane
+  default_tax_rate: 0.21
+
+# Findings that CAP the maximum pillar/investor score rather than subtract
+# points from it — a company can't average its way out of a going-concern-type
+# risk with strong scores elsewhere.
+red_flags:
+  negative_equity_cap: 3.0
+  interest_coverage_critical: 1.0
+  interest_coverage_cap: 4.0
+  current_ratio_critical: 0.5
+  current_ratio_cap: 4.0
+  net_debt_to_ebitda_critical: 6.0
+  net_debt_to_ebitda_cap: 5.0
+  negative_fcf_and_earnings_cap: 5.0
+
+# Quality-vs-price quadrant split points (0-10 scale).
+quadrant:
+  quality_threshold: 6.0
+  valuation_threshold: 6.0

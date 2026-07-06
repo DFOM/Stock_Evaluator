@@ -1,0 +1,175 @@
+"""Classifies a company into a business-shape archetype.
+
+Why this exists: a single valuation method applied to every company is wrong
+more often than it's right. A bank's cash flow statement is not comparable to
+an industrial's; a pre-profit SaaS company can't be DCF'd sensibly. So we
+score each archetype with independent heuristic signals (sector/industry
+keywords + ratio evidence) and pick the highest, with a confidence measure
+based on how clear the win was.
+
+This is a rule-based heuristic, not a trained classifier — it's meant to be
+obviously-correct on clear-cut cases (a bank, a REIT, a mature dividend payer,
+a pre-profit high-growth name) and transparent (every point is explained)
+rather than clever on ambiguous ones.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from src.models import ArchetypeResult, CompanyData, RatioSet
+
+FINANCIAL_INDUSTRY_KEYWORDS = (
+    "bank", "insurance", "capital markets", "asset management", "credit services",
+    "financial conglomerates", "financial data", "mortgage", "reinsurance",
+    "insurance brokers", "shell companies",
+)
+REIT_INDUSTRY_KEYWORDS = ("reit",)
+ASSET_HEAVY_SECTOR_KEYWORDS = ("energy", "basic materials", "utilities")
+ASSET_HEAVY_INDUSTRY_KEYWORDS = ("oil & gas", "mining", "metals", "coal", "steel", "gold", "copper")
+
+
+@dataclass
+class _Vote:
+    score: float = 0.0
+    reasons: list[str] = None
+
+    def __post_init__(self):
+        if self.reasons is None:
+            self.reasons = []
+
+    def add(self, points: float, reason: str) -> None:
+        self.score += points
+        self.reasons.append(f"+{points:g}: {reason}")
+
+
+def _contains_any(text: str | None, keywords: tuple[str, ...]) -> bool:
+    if not text:
+        return False
+    text = text.lower()
+    return any(kw in text for kw in keywords)
+
+
+def classify(data: CompanyData, ratios: RatioSet) -> ArchetypeResult:
+    sector = data.sector or ""
+    industry = data.industry or ""
+
+    votes: dict[str, _Vote] = {
+        "financial": _Vote(),
+        "asset_play": _Vote(),
+        "growth": _Vote(),
+        "turnaround": _Vote(),
+        "cash_cow": _Vote(),
+    }
+
+    # ---------------- financial ----------------
+    fin = votes["financial"]
+    if sector.lower() == "financial services":
+        fin.add(5, f"sector is '{sector}'")
+    if _contains_any(industry, FINANCIAL_INDUSTRY_KEYWORDS):
+        fin.add(3, f"industry '{industry}' matches financial-institution keywords")
+    if ratios.gross_margin is None and ratios.roe is not None and ratios.price_to_book is not None:
+        fin.add(1, "no meaningful gross margin but ROE/P-B are present (bank-shaped income statement)")
+
+    # ---------------- asset_play ----------------
+    ap = votes["asset_play"]
+    if sector.lower() == "real estate":
+        ap.add(5, f"sector is '{sector}'")
+    if _contains_any(industry, REIT_INDUSTRY_KEYWORDS):
+        ap.add(4, f"industry '{industry}' is a REIT")
+    if _contains_any(sector, ASSET_HEAVY_SECTOR_KEYWORDS) or _contains_any(industry, ASSET_HEAVY_INDUSTRY_KEYWORDS):
+        ap.add(2, f"sector/industry ('{sector}'/'{industry}') is asset-heavy (energy, mining, materials, utilities)")
+    if ratios.payout_ratio is not None and ratios.payout_ratio > 0.75:
+        ap.add(1, f"high payout ratio ({ratios.payout_ratio:.0%}) typical of income/NAV vehicles")
+    if ratios.dividend_yield is not None and ratios.dividend_yield > 0.04:
+        ap.add(1, f"high dividend yield ({ratios.dividend_yield:.1%})")
+
+    # ---------------- growth ----------------
+    gr = votes["growth"]
+    rg = ratios.revenue_growth_yoy
+    if rg is not None:
+        if rg > 0.40:
+            gr.add(5, f"revenue growth {rg:.1%} > 40% (hyper-growth)")
+        elif rg > 0.20:
+            gr.add(3, f"revenue growth {rg:.1%} > 20%")
+        elif rg > 0.15:
+            gr.add(2, f"revenue growth {rg:.1%} > 15%")
+        elif rg > 0.10:
+            gr.add(1, f"revenue growth {rg:.1%} > 10%")
+    if ratios.net_margin is not None and ratios.net_margin < 0:
+        gr.add(2, f"negative net margin ({ratios.net_margin:.1%}) — reinvesting/pre-profit rather than distressed given growth")
+    if ratios.price_to_sales is not None and ratios.price_to_sales > 15:
+        gr.add(2, f"extremely rich revenue multiple (P/S {ratios.price_to_sales:.1f}x) — priced on future growth, re-rating risk")
+    elif ratios.price_to_sales is not None and ratios.price_to_sales > 8 and (ratios.net_margin is None or ratios.net_margin < 0.10):
+        gr.add(2, f"high P/S ({ratios.price_to_sales:.1f}x) priced on revenue, not earnings")
+    if not ratios.dividend_yield:
+        gr.add(1, "pays no dividend (reinvesting for growth)")
+    if sector.lower() == "technology" and rg is not None and rg > 0.10:
+        gr.add(1, f"technology sector with double-digit growth")
+
+    # ---------------- turnaround ----------------
+    tu = votes["turnaround"]
+    if ratios.debt_to_equity is not None and ratios.debt_to_equity < 0:
+        tu.add(4, "negative shareholder equity (balance sheet distress)")
+    if rg is not None and rg < -0.05:
+        tu.add(2, f"revenue declining ({rg:.1%} YoY)")
+    if ratios.net_margin is not None and ratios.net_margin < 0 and ratios.free_cash_flow is not None and ratios.free_cash_flow < 0:
+        tu.add(3, "negative net margin AND negative free cash flow simultaneously")
+    if ratios.interest_coverage is not None and ratios.interest_coverage < 1.5:
+        tu.add(2, f"interest coverage {ratios.interest_coverage:.1f}x is dangerously thin")
+    if ratios.current_ratio is not None and ratios.current_ratio < 1 and ratios.net_debt_to_ebitda is not None and ratios.net_debt_to_ebitda > 5:
+        tu.add(2, "current ratio < 1 combined with net debt > 5x EBITDA")
+
+    # ---------------- cash_cow ----------------
+    cc = votes["cash_cow"]
+    if rg is not None and 0 <= rg <= 0.15:
+        cc.add(2, f"stable, moderate revenue growth ({rg:.1%})")
+    if ratios.net_margin is not None and ratios.net_margin > 0.10:
+        cc.add(2, f"consistently profitable (net margin {ratios.net_margin:.1%})")
+    if ratios.free_cash_flow is not None and ratios.free_cash_flow > 0 and ratios.fcf_margin is not None and ratios.fcf_margin > 0.05:
+        cc.add(2, f"solid positive free cash flow (margin {ratios.fcf_margin:.1%})")
+    if ratios.dividend_yield:
+        cc.add(1, "pays a dividend")
+    if ratios.market_cap is not None and ratios.market_cap > 10e9:
+        cc.add(1, "large, established market cap")
+
+    # Financial and asset_play are near-disqualifying for cash_cow/growth/turnaround
+    # framing when their sector signal is strong, since valuation approach is what
+    # matters here, not just profitability shape.
+    if fin.score >= 5:
+        for name in ("growth", "turnaround", "cash_cow"):
+            votes[name].score *= 0.4
+    if ap.score >= 5:
+        for name in ("growth", "turnaround", "cash_cow"):
+            votes[name].score *= 0.5
+
+    # Hyper-growth crowds out the cash_cow framing even if currently
+    # profitable: a rich revenue multiple plus fast growth means the story is
+    # about future growth durability, not steady-state cash generation, so
+    # revenue-multiple/Rule-of-40 valuation is more relevant than a steady DCF.
+    if rg is not None and rg > 0.30:
+        cc.score *= 0.5
+
+    ranked = sorted(votes.items(), key=lambda kv: kv[1].score, reverse=True)
+    winner, winner_vote = ranked[0]
+    runner_up_score = ranked[1][1].score if len(ranked) > 1 else 0.0
+
+    if winner_vote.score <= 0:
+        # No signal fired at all (heavily missing data) — default to cash_cow
+        # as the least valuation-method-specific fallback, but flag low confidence.
+        winner = "cash_cow"
+        winner_vote = votes["cash_cow"]
+        winner_vote.reasons.append("no classification signal fired — defaulting to cash_cow")
+        confidence = 0.25
+    else:
+        margin = (winner_vote.score - runner_up_score) / winner_vote.score
+        confidence = max(0.3, min(0.95, 0.5 + margin * 0.5))
+        confidence *= 0.7 + 0.3 * ratios.completeness
+
+    scores = {name: round(v.score, 2) for name, v in votes.items()}
+
+    return ArchetypeResult(
+        archetype=winner,
+        confidence=round(confidence, 2),
+        reasons=winner_vote.reasons,
+        scores=scores,
+    )
