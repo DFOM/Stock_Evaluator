@@ -84,10 +84,17 @@ def classify(data: CompanyData, ratios: RatioSet) -> ArchetypeResult:
         ap.add(4, f"industry '{industry}' is a REIT")
     if _contains_any(sector, ASSET_HEAVY_SECTOR_KEYWORDS) or _contains_any(industry, ASSET_HEAVY_INDUSTRY_KEYWORDS):
         ap.add(2, f"sector/industry ('{sector}'/'{industry}') is asset-heavy (energy, mining, materials, utilities)")
-    if ratios.payout_ratio is not None and ratios.payout_ratio > 0.75:
-        ap.add(1, f"high payout ratio ({ratios.payout_ratio:.0%}) typical of income/NAV vehicles")
-    if ratios.dividend_yield is not None and ratios.dividend_yield > 0.04:
-        ap.add(1, f"high dividend yield ({ratios.dividend_yield:.1%})")
+    # Income-shape signals (high payout, high yield) only CORROBORATE an
+    # asset play whose sector already says so — on their own they must not
+    # classify. A snack company whose payout ratio spiked because earnings
+    # collapsed is not an income/NAV vehicle (JJSF), it's a company in
+    # trouble; the earnings-collapse case is handled as a turnaround signal
+    # below instead.
+    if ap.score > 0:
+        if ratios.payout_ratio is not None and ratios.payout_ratio > 0.75:
+            ap.add(1, f"high payout ratio ({ratios.payout_ratio:.0%}) typical of income/NAV vehicles")
+        if ratios.dividend_yield is not None and ratios.dividend_yield > 0.04:
+            ap.add(1, f"high dividend yield ({ratios.dividend_yield:.1%})")
 
     # Pre-profit vs distressed disambiguation: burning cash while growing
     # fast with years of runway is the normal shape of a young growth
@@ -125,6 +132,8 @@ def classify(data: CompanyData, ratios: RatioSet) -> ArchetypeResult:
         gr.add(1, f"technology sector with double-digit growth")
     if pre_profit_growth:
         gr.add(3, f"pre-profit but well funded: ~{runway:.1f} years of cash runway at current burn")
+    if ratios.revenue_cagr_3y is not None and ratios.revenue_cagr_3y > 0.10 and rg is not None and rg > 0.05:
+        gr.add(2, f"sustained multi-year compounding (3y revenue CAGR {ratios.revenue_cagr_3y:.1%}, still growing)")
 
     # ---------------- turnaround ----------------
     tu = votes["turnaround"]
@@ -149,6 +158,11 @@ def classify(data: CompanyData, ratios: RatioSet) -> ArchetypeResult:
         tu.add(3, f"only ~{runway:.1f} years of cash runway at current burn")
     if ratios.current_ratio is not None and ratios.current_ratio < 1 and ratios.net_debt_to_ebitda is not None and ratios.net_debt_to_ebitda > 5:
         tu.add(2, "current ratio < 1 combined with net debt > 5x EBITDA")
+    if (
+        ratios.payout_ratio is not None and ratios.payout_ratio > 1.0
+        and ratios.eps_growth_yoy is not None and ratios.eps_growth_yoy < -0.30
+    ):
+        tu.add(1, f"dividend exceeds earnings (payout {ratios.payout_ratio:.0%}) while EPS is collapsing ({ratios.eps_growth_yoy:.0%}) — sustainability risk")
 
     # ---------------- cash_cow ----------------
     cc = votes["cash_cow"]

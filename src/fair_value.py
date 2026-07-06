@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from src.models import ArchetypeResult, CompanyData, FairValueResult, RatioSet
+from src.ratio_engine import _row  # shared statement-row accessor
 
 
 def _cost_of_equity(beta: Optional[float], config: dict[str, Any]) -> float:
@@ -91,6 +92,20 @@ def _dcf_cash_cow(data: CompanyData, ratios: RatioSet, config: dict[str, Any]) -
     years = va["dcf_projection_years"]
     tg = va["terminal_growth_rate"]
 
+    # Normalization check: when the 3-yr average diverges hard from TTM, the
+    # DCF base is a judgment call — surface both bases instead of silently
+    # picking one (the AI analysts called this out on DXPE, where a fading
+    # TTM made the 3-yr average look optimistic).
+    fcf_divergence_note = None
+    ttm_fcf = ratios.free_cash_flow
+    if ttm_fcf and abs(fcf - ttm_fcf) / abs(ttm_fcf) > 0.40:
+        divergence = (fcf - ttm_fcf) / abs(ttm_fcf)
+        fcf_divergence_note = (
+            f"⚠ FCF normalization: 3-yr average ({fcf / 1e6:,.0f}M) diverges {divergence:+.0%} from "
+            f"TTM ({ttm_fcf / 1e6:,.0f}M). The DCF uses the 3-yr average — if the TTM level is the "
+            "new normal rather than a blip, the whole range shifts accordingly."
+        )
+
     mid_pv = _project_fcf_pv(fcf, base_growth, discount, tg, years)
     low_pv = _project_fcf_pv(fcf, max(base_growth - 0.03, -0.05), discount + 0.01, tg, years)
     high_pv = _project_fcf_pv(fcf, min(base_growth + 0.03, va["fcf_growth_cap"] + 0.03), max(discount - 0.01, tg + 0.02), tg, years)
@@ -111,10 +126,12 @@ def _dcf_cash_cow(data: CompanyData, ratios: RatioSet, config: dict[str, Any]) -
             "base_fcf": round(fcf, 0), "growth_rate": round(base_growth, 4),
             "discount_rate": round(discount, 4), "terminal_growth": tg,
             "projection_years": years, "net_debt": round(net_debt, 0), "shares_outstanding": round(shares, 0),
+            **({"fcf_ttm": round(ttm_fcf, 0)} if fcf_divergence_note else {}),
         },
         notes=[
             "Treats reported free cash flow as equity-owner cash flow (a common simplification for a quick DCF).",
             f"Base FCF is {fcf_note}, not a single trailing-twelve-month snapshot.",
+            *([fcf_divergence_note] if fcf_divergence_note else []),
         ],
     )
 
@@ -226,7 +243,75 @@ def _pb_financial(data: CompanyData, ratios: RatioSet, config: dict[str, Any]) -
     )
 
 
+def _ffo_reit(data: CompanyData, ratios: RatioSet, config: dict[str, Any]) -> Optional[FairValueResult]:
+    """FFO/AFFO-multiple valuation for REITs. GAAP book value systematically
+    misprices REITs (properties are carried at depreciated cost while
+    depreciation is largely a non-cash fiction for real estate), so the
+    sector standard is a multiple of funds from operations.
+
+    yfinance doesn't expose company-reported FFO/AFFO, so both are
+    approximated and documented as such:
+      FFO  ~ net income + D&A          (ignores gains/losses on property
+                                        sales, which we can't isolate)
+      AFFO ~ FFO - maintenance capex   (proxy: min(actual capex, 15% of D&A)
+                                        — recurring capex for REITs typically
+                                        runs 10-20% of depreciation, and
+                                        actual reported capex often includes
+                                        growth acquisitions we must exclude)
+    """
+    shares = _shares_outstanding(data)
+    net_income = _row(data.income_stmt, "Net Income")
+    dep = (
+        _row(data.cashflow, "Depreciation And Amortization")
+        or _row(data.cashflow, "Depreciation Amortization Depletion")
+        or _row(data.income_stmt, "Reconciled Depreciation")
+    )
+    if not shares or net_income is None or dep is None:
+        return None
+
+    ffo = net_income + dep
+    capex = _row(data.cashflow, "Capital Expenditure")
+    maint_capex = min(abs(capex), 0.15 * dep) if capex is not None else 0.15 * dep
+    affo = ffo - maint_capex
+    if affo <= 0:
+        return None
+
+    affo_ps = affo / shares
+    # P/AFFO band: 12x-18x spans the historical range for investment-grade
+    # equity REITs (net-lease names cluster mid-band). A heuristic, not a comp.
+    low_x, mid_x, high_x = 12.0, 15.0, 18.0
+
+    return FairValueResult(
+        method="REIT FFO/AFFO multiple (approximated from statements)",
+        low=round(affo_ps * low_x, 2), mid=round(affo_ps * mid_x, 2), high=round(affo_ps * high_x, 2),
+        currency=data.currency, confidence=0.5,
+        margin_of_safety_price=None,
+        assumptions={
+            "net_income": round(net_income, 0), "depreciation_amortization": round(dep, 0),
+            "ffo_approx": round(ffo, 0), "maintenance_capex_proxy": round(maint_capex, 0),
+            "affo_approx": round(affo, 0), "affo_per_share": round(affo_ps, 2),
+            "p_affo_band": f"{low_x:.0f}x - {high_x:.0f}x",
+        },
+        notes=[
+            "FFO approximated as net income + D&A (yfinance lacks company-reported FFO; property sale "
+            "gains/losses can't be isolated and are NOT excluded — treat as approximate).",
+            "Maintenance capex proxied as min(actual capex, 15% of D&A) so growth acquisitions don't "
+            "deflate AFFO.",
+            "Replaces the old book-value NAV proxy, which systematically misprices REITs (depreciated-cost "
+            "accounting understates property values).",
+        ],
+    )
+
+
 def _nav_asset_play(data: CompanyData, ratios: RatioSet, config: dict[str, Any]) -> FairValueResult:
+    # REITs get the sector-standard FFO/AFFO lens; other asset plays
+    # (miners, energy, utilities) keep the book-value NAV proxy below.
+    industry = (data.industry or "").lower()
+    if "reit" in industry or (data.sector or "").lower() == "real estate":
+        result = _ffo_reit(data, ratios, config)
+        if result is not None:
+            return result
+
     navps = _book_value_per_share(data, ratios)
     if not navps:
         return FairValueResult(
