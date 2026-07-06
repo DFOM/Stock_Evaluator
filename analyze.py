@@ -18,49 +18,32 @@ from __future__ import annotations
 import argparse
 import sys
 
-from src.archetype_classifier import classify
-from src.briefing import build_briefing_packet, redact_for_blind
 from src.config import load_config
-from src.data_fetcher import fetch_company_data
-from src.ensemble import run_dual_pass
-from src.fair_value import estimate_fair_value
-from src.ratio_engine import compute_ratios
+from src.pipeline import run_full_analysis
 from src.report import console, render_report
 from src.run_log import append_run
-from src.scoring import score_company
 
 
 def analyze_ticker(ticker: str, config: dict, use_ai: bool, only_analysts: list[str] | None, mode: str = "dual") -> None:
     console.rule(f"[bold]{ticker.upper()}[/bold]")
-    data = fetch_company_data(ticker)
-
-    if not data.current_price and not data.info:
-        console.print(f"[bold red]Could not fetch any data for '{ticker}'. Check the symbol and try again.[/bold red]")
+    status = {
+        "dual": "Analyzing (blind consensus pass + sighted critic pass)...",
+        "blind_only": "Analyzing (blind pass only)...",
+        "sighted_only": "Analyzing (sighted pass only)...",
+    }[mode]
+    try:
+        with console.status(status):
+            result = run_full_analysis(ticker, config, use_ai=use_ai, only_analysts=only_analysts, mode=mode)
+    except ValueError as e:
+        console.print(f"[bold red]{e}[/bold red]")
         return
 
-    ratios = compute_ratios(data)
-    archetype = classify(data, ratios)
-    scores = score_company(data, ratios, archetype, config)
-    fair_value = estimate_fair_value(data, ratios, archetype, config)
-
-    dual = None
-    if use_ai:
-        briefing = build_briefing_packet(data, ratios, archetype, scores, fair_value)
-        blind_briefing = redact_for_blind(briefing)
-        status = {
-            "dual": "Consulting AI analysts (blind consensus pass + sighted critic pass)...",
-            "blind_only": "Consulting AI analysts (blind pass only)...",
-            "sighted_only": "Consulting AI analysts (sighted pass only)...",
-        }[mode]
-        with console.status(status):
-            dual = run_dual_pass(
-                briefing, blind_briefing, fair_value,
-                only_names=only_analysts, mode=mode, current_price=data.current_price,
-            )
-
-    render_report(data, ratios, archetype, scores, fair_value, dual)
-    if dual is not None:
-        append_run(data.ticker, dual)
+    render_report(
+        result.data, result.ratios, result.archetype, result.scores, result.fair_value,
+        result.dual, alt_valuation=result.alt_valuation, position_hint=result.position_hint,
+    )
+    if result.dual is not None:
+        append_run(result.ticker, result.dual)
 
 
 def main() -> None:

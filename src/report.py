@@ -171,7 +171,7 @@ def _red_flags_panel(scores: ScoreResult) -> Panel:
     return Panel("\n".join(lines), title="Red Flags & Notes", border_style=style)
 
 
-def _fair_value_panel(fv: FairValueResult) -> Panel:
+def _fair_value_panel(fv: FairValueResult, title: str = "Rule-Based Fair Value", border: str = "blue") -> Panel:
     lines = [f"[bold]Method:[/bold] {fv.method}", f"[bold]Confidence:[/bold] {fv.confidence:.0%}", ""]
     if fv.mid is not None:
         lines.append(f"Fair value range: {_money(fv.low, fv.currency)}  —  {_money(fv.mid, fv.currency)} (mid)  —  {_money(fv.high, fv.currency)}")
@@ -191,7 +191,7 @@ def _fair_value_panel(fv: FairValueResult) -> Panel:
         lines.append("[bold]Notes:[/bold]")
         for n in fv.notes:
             lines.append(f"  • {n}")
-    return Panel("\n".join(lines), title="Rule-Based Fair Value", border_style="blue")
+    return Panel("\n".join(lines), title=title, border_style=border)
 
 
 def _ai_disagreement_label(di: Optional[float]) -> str:
@@ -333,6 +333,17 @@ def _critic_panel(critic: EnsembleResult, total_cost: float) -> Panel:
     return Panel("\n".join(lines), title="Critic Notes (sighted pass)", border_style="yellow")
 
 
+def _position_panel(hint: dict) -> Panel:
+    entry = hint.get("entry_price")
+    lines = [
+        f"[bold]Suggested max position:[/bold] {hint.get('max_position_pct', 0):.1f}% of portfolio",
+        f"[bold]Entry (margin-of-safety price):[/bold] {entry if entry is not None else 'n/a'}",
+        f"[dim]{hint.get('rationale', '')}[/dim]",
+        f"[dim]{hint.get('disclaimer', '')}[/dim]",
+    ]
+    return Panel("\n".join(lines), title="Position Sizing (heuristic)", border_style="cyan")
+
+
 def render_report(
     data: CompanyData,
     ratios: RatioSet,
@@ -340,6 +351,8 @@ def render_report(
     scores: ScoreResult,
     fair_value: FairValueResult,
     dual: Optional[DualPassResult] = None,
+    alt_valuation=None,
+    position_hint: Optional[dict] = None,
 ) -> None:
     console.print(_header(data))
     if data.warnings:
@@ -357,6 +370,15 @@ def render_report(
     console.print(_scores_panel(scores))
     console.print(_red_flags_panel(scores))
     console.print(_fair_value_panel(fair_value))
+    if alt_valuation is not None:
+        console.print(Panel(f"[yellow]{alt_valuation.reason}[/yellow]", title="Unanimous AI Dispute", border_style="yellow"))
+        console.print(_fair_value_panel(
+            alt_valuation.fair_value,
+            title=f"Alternative Fair Value (AI-suggested archetype: {alt_valuation.archetype})",
+            border="yellow",
+        ))
+    if position_hint is not None:
+        console.print(_position_panel(position_hint))
 
     if dual is not None and dual.critic is None:
         console.print(f"[bold]Estimated AI cost for this analysis:[/bold] ${dual.total_cost:.4f}")
