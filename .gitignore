@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 venv/
 .env
+runs.jsonl
 .DS_Store
 *.egg-info/
 .pytest_cache/

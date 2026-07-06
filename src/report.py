@@ -8,6 +8,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from src.ensemble import RULE_BASED_NAME, EnsembleResult
 from src.models import ArchetypeResult, CompanyData, FairValueResult, RatioSet, ScoreResult
 
 console = Console()
@@ -191,6 +192,85 @@ def _fair_value_panel(fv: FairValueResult) -> Panel:
         for n in fv.notes:
             lines.append(f"  • {n}")
     return Panel("\n".join(lines), title="Rule-Based Fair Value", border_style="blue")
+
+
+def _disagreement_label(di: Optional[float]) -> str:
+    if di is None:
+        return "n/a (needs 2+ contributing analysts)"
+    if di < 0.10:
+        return f"[bold green]{di:.1%} (analysts broadly agree)[/bold green]"
+    if di < 0.25:
+        return f"[bold yellow]{di:.1%} (moderate disagreement)[/bold yellow]"
+    return f"[bold red]{di:.1%} (HIGH — analysts see very different fair values; treat consensus with caution)[/bold red]"
+
+
+def _ensemble_panel(ensemble: EnsembleResult, currency: Optional[str]) -> Panel:
+    lines: list[str] = []
+
+    if ensemble.consensus_mid is not None:
+        lines.append(
+            f"[bold]Consensus fair value:[/bold] {_money(ensemble.consensus_low, currency)}  —  "
+            f"{_money(ensemble.consensus_mid, currency)} (mid)  —  {_money(ensemble.consensus_high, currency)}"
+        )
+        conf = ensemble.overall_confidence
+        lines.append(f"[bold]Overall confidence:[/bold] {conf:.0%}" if conf is not None else "")
+        lines.append(f"[bold]Disagreement index:[/bold] {_disagreement_label(ensemble.disagreement_index)}")
+    else:
+        lines.append("[dim]No usable analyst responses — consensus unavailable.[/dim]")
+
+    lines.append("")
+    lines.append(f"[bold]Analysts ({ensemble.contributing_analysts} contributing):[/bold]")
+    for r in ensemble.responses:
+        if r.ok and r.midpoint is not None:
+            if r.archetype_agreement is False:
+                stance = f"[yellow]disputes archetype → {r.suggested_archetype or '?'}[/yellow]"
+            else:
+                stance = "agrees with archetype"
+            tag = " [dim](rule-based)[/dim]" if r.analyst_name == RULE_BASED_NAME else ""
+            lines.append(
+                f"  • {r.analyst_name}{tag}: {_money(r.fair_value_low, currency)} — {_money(r.fair_value_high, currency)}"
+                f" (mid {_money(r.midpoint, currency)}), conf {r.confidence:.0%}, {stance}"
+            )
+        else:
+            lines.append(f"  • [red]{r.analyst_name}: FAILED — {r.error}[/red]")
+
+    if ensemble.archetype_disputes:
+        lines.append("")
+        lines.append("[bold yellow]Archetype disputes:[/bold yellow]")
+        for d in ensemble.archetype_disputes:
+            lines.append(f"  ⚠ {d}")
+
+    theses = [r for r in ensemble.responses if r.ok and r.one_paragraph_thesis and r.analyst_name != RULE_BASED_NAME]
+    if theses:
+        lines.append("")
+        lines.append("[bold]Theses:[/bold]")
+        for r in theses:
+            lines.append(f"  [bold]{r.analyst_name}:[/bold] {r.one_paragraph_thesis}")
+
+    risks: list[str] = []
+    for r in ensemble.responses:
+        for risk in r.key_risks:
+            if risk not in risks:
+                risks.append(risk)
+    if risks:
+        lines.append("")
+        lines.append("[bold]Key risks flagged by analysts:[/bold]")
+        for risk in risks[:8]:
+            lines.append(f"  • {risk}")
+
+    if ensemble.skipped:
+        lines.append("")
+        for msg in ensemble.skipped:
+            lines.append(f"[yellow]⚠ {msg}[/yellow]")
+
+    lines.append("")
+    lines.append(f"[bold]Estimated AI cost for this analysis:[/bold] ${ensemble.total_cost:.4f}")
+
+    return Panel("\n".join(l for l in lines if l is not None), title="AI Analyst Ensemble", border_style="magenta")
+
+
+def render_ensemble(ensemble: EnsembleResult, currency: Optional[str]) -> None:
+    console.print(_ensemble_panel(ensemble, currency))
 
 
 def render_report(

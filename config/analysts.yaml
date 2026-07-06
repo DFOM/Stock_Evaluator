@@ -1,0 +1,48 @@
+# AI analyst roster. Each entry mirrors the future DB row exactly (name,
+# provider_type, model, base_url, api_key_env, active, weight) so the Phase 3
+# migration to Postgres is a straight copy.
+#
+# Keys NEVER live here — api_key_env names the environment variable holding
+# the key, and the keys themselves live in a local .env (gitignored). An
+# active analyst whose env var is missing is skipped with a warning, not an
+# error.
+#
+# cost_per_mtok_input/output are USD per million tokens, used for the
+# per-run cost estimate in runs.jsonl. Update when provider pricing changes.
+
+analysts:
+  - name: claude-sonnet
+    provider_type: anthropic
+    model: claude-sonnet-4-6
+    api_key_env: ANTHROPIC_API_KEY
+    active: true
+    weight: 1.0
+    cost_per_mtok_input: 3.00
+    cost_per_mtok_output: 15.00
+
+  - name: gpt
+    provider_type: openai_compatible
+    model: gpt-5.1
+    # base_url omitted -> api.openai.com
+    api_key_env: OPENAI_API_KEY
+    active: true
+    weight: 1.0
+    cost_per_mtok_input: 1.25
+    cost_per_mtok_output: 10.00
+
+  # Example of any other OpenAI-compatible provider — flip active: true and
+  # add the key to .env to enable. Groq, DeepSeek, Mistral, xAI, and a local
+  # Ollama all work the same way (base_url + model + key).
+  - name: deepseek
+    provider_type: openai_compatible
+    model: deepseek-chat
+    base_url: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+    active: false
+    weight: 0.8
+    cost_per_mtok_input: 0.28
+    cost_per_mtok_output: 0.42
+
+# The rule-based fair value engine participates in the ensemble as one more
+# analyst with this weight (its confidence comes from the engine itself).
+rule_based_weight: 1.0
