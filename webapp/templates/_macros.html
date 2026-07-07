@@ -1,0 +1,13 @@
+{#
+  Glossary term macro. Renders `label` with a dotted underline + ⓘ and a
+  hover/tap tooltip (short + long) that links to the full /glossary entry.
+  If the slug isn't in the glossary, renders `label` as plain text so cards
+  never break. `GLOSSARY` is a Jinja global (registered in main.py); import
+  this file `with context` so the macro can see it.
+#}
+{% macro g(key, label) -%}
+{%- set t = GLOSSARY.get(key) if GLOSSARY else none -%}
+{%- if t -%}
+<span class="gloss" tabindex="0" role="button" aria-label="{{ label }} — {{ t.short }}"><span class="gterm">{{ label }}</span><span class="gi" aria-hidden="true">&#9432;</span><span class="tip"><span class="ttitle">{{ t.title }}</span><span class="tshort">{{ t.short }}</span>{% if t.long %}<span class="tlong">{{ t.long }}</span>{% endif %}<a class="tlink" href="/glossary#{{ key }}" tabindex="-1">Full entry &rarr;</a></span></span>
+{%- else -%}{{ label }}{%- endif -%}
+{%- endmacro %}

@@ -1,0 +1,552 @@
+# Glossary of every term that appears on an analysis card.
+#
+# Each entry: title (display name), short (one-line tooltip), long (2-3
+# sentences — what it is, how to read it good vs bad, and any meaning
+# specific to this tool). Written for a smart beginner studying investing.
+#
+# Slugs are stable ids: card tooltips and the /glossary page both key off
+# them. A term with no entry here simply renders as plain text (no tooltip),
+# so this file can grow without breaking anything.
+
+terms:
+
+  # ─────────────── Archetypes (business shapes) ───────────────
+  cash_cow:
+    title: "Cash Cow (archetype)"
+    short: "Mature, steadily profitable business that throws off reliable cash."
+    long: >
+      A company whose value comes from predictable, ongoing cash generation rather than
+      rapid growth — think an established consumer brand or utility. We value these with a
+      discounted-cash-flow (DCF) model because their future cash flows are forecastable.
+      Good sign: fat, stable margins and free cash flow. Risk: slow growth means overpaying
+      for a rich multiple hurts.
+
+  growth:
+    title: "Growth (archetype)"
+    short: "Fast-growing, often not-yet-profitable company priced on its future."
+    long: >
+      A business expanding revenue quickly (frequently 20%+ a year) that may still be losing
+      money as it reinvests. We value these on revenue multiples and the Rule of 40 rather than
+      current earnings, because the story is future scale. Good sign: high growth with improving
+      margins and cash runway. Risk: the price already assumes success, so any stumble re-rates
+      the stock hard.
+
+  financial:
+    title: "Financial (archetype)"
+    short: "Bank, insurer or lender — valued on book value and returns, not cash flow."
+    long: >
+      Banks and insurers make money on the spread between assets and liabilities, so a normal
+      cash-flow statement is meaningless for them. We value them on price-to-book versus
+      return-on-equity instead. Good sign: high, stable ROE well above the cost of equity.
+      Risk: leverage and credit losses can wipe out thin equity fast.
+
+  asset_play:
+    title: "Asset Play (archetype)"
+    short: "REIT, miner or energy firm valued on the assets it owns."
+    long: >
+      A company whose worth is anchored to tangible assets — properties, reserves, equipment —
+      rather than earnings power. REITs are valued on FFO/AFFO multiples; miners and energy on
+      net asset value. Good sign: assets worth more than the market price (a discount to NAV).
+      Risk: asset values swing with commodity prices, interest rates and property cycles.
+
+  turnaround:
+    title: "Turnaround (archetype)"
+    short: "Distressed or deteriorating business; survival is the main question."
+    long: >
+      A company with declining revenue, shrinking margins, or a stressed balance sheet where the
+      key question is whether it survives, not what it's worth in steady state. We value these
+      with a wide balance-sheet survival range, not a precise target. Good sign: a fixable
+      problem plus enough liquidity and time. Risk: equity can go to zero in a restructuring.
+
+  # ─────────────── Pillars (scoring dimensions) ───────────────
+  pillar_valuation:
+    title: "Valuation (pillar)"
+    short: "Is the price cheap or expensive versus what you get?"
+    long: >
+      Scores how attractively the stock is priced against earnings, cash flow, assets or growth.
+      Higher (closer to 10) means cheaper / better value; lower means you're paying a rich price.
+      A great company can still score low here if it's expensive — good company and good price
+      are separate questions (see the quality-vs-price quadrant).
+
+  pillar_quality:
+    title: "Quality (pillar)"
+    short: "How good the business itself is — margins, returns, durability."
+    long: >
+      Measures business excellence: profit margins, returns on capital (ROE/ROIC), and consistency.
+      Higher is better — a high-quality company compounds value over time and withstands shocks.
+      A high quality score paired with a low valuation score is the classic "great company, wrong
+      price" watchlist situation.
+
+  pillar_growth:
+    title: "Growth (pillar)"
+    short: "How fast revenue, earnings and cash flow are expanding."
+    long: >
+      Scores the rate and durability of growth in sales, profits and cash. Higher is better, but
+      context matters — 5% growth is strong for a mature staple and weak for a young software firm.
+      Growth that isn't yet funded by cash flow raises dilution and execution risk.
+
+  pillar_financial_health:
+    title: "Financial Health (pillar)"
+    short: "Balance-sheet strength — debt, liquidity, ability to survive shocks."
+    long: >
+      Scores leverage (debt/equity, net debt/EBITDA), liquidity (current ratio) and the ability
+      to service debt (interest coverage). Higher is safer. A weak score flags refinancing risk
+      or vulnerability in a downturn, and can trigger a red-flag veto that caps the whole score.
+
+  pillar_macro:
+    title: "Macro / Country Risk (pillar)"
+    short: "Country and sector risk in the company's operating environment."
+    long: >
+      Scores the macroeconomic and geopolitical backdrop — a company in a stable, low-risk country
+      scores higher than one exposed to currency, sanctions or political risk. Higher is safer.
+      This feeds the discount rate: riskier geographies demand a higher required return.
+
+  pillar_momentum:
+    title: "Momentum (pillar)"
+    short: "Recent price and earnings trend — the market's near-term mood."
+    long: >
+      Scores recent price performance and earnings direction. Higher means positive momentum.
+      It dominates the trader (weeks-to-months) score and is near-zero-weighted in the investor
+      (multi-year) score, because momentum matters for timing but not for long-term value.
+
+  # ─────────────── Profitability ratios ───────────────
+  gross_margin:
+    title: "Gross Margin"
+    short: "Revenue left after the direct cost of making the product."
+    long: >
+      (Revenue − cost of goods) ÷ revenue. Shows pricing power and product economics before
+      overhead. Higher is better; software runs 70-90%, groceries under 30%. A falling gross
+      margin is an early warning of cost inflation or price competition.
+
+  operating_margin:
+    title: "Operating Margin"
+    short: "Profit from core operations, before interest and taxes."
+    long: >
+      Operating income ÷ revenue — profit from running the business, excluding financing and tax.
+      Higher is better and more comparable across companies than net margin. Near zero or negative
+      means the core business isn't yet profitable.
+
+  net_margin:
+    title: "Net Margin"
+    short: "Bottom-line profit as a percentage of revenue."
+    long: >
+      Net income ÷ revenue — what's left after everything. Higher is better, but it's distorted by
+      one-off items, tax quirks and financing, so read it alongside operating and FCF margins.
+      A negative net margin can mean genuine distress or deliberate reinvestment for growth.
+
+  ebitda_margin:
+    title: "EBITDA Margin"
+    short: "Profit before interest, tax, depreciation and amortization, over revenue."
+    long: >
+      A rough proxy for cash operating profitability that strips out capital-structure and
+      accounting choices. Higher is better. Useful for comparing capital-heavy businesses, but it
+      ignores real costs (capex, interest), so never treat EBITDA as free cash flow.
+
+  roe:
+    title: "ROE — Return on Equity"
+    short: "Profit generated per dollar of shareholder equity."
+    long: >
+      Net income ÷ shareholder equity. Measures how efficiently the company turns owners' capital
+      into profit. Above ~15% is strong; below the cost of equity (~8-10%) is value-destroying.
+      Beware ROE inflated by heavy debt or by negative/shrinking equity from buybacks.
+
+  roa:
+    title: "ROA — Return on Assets"
+    short: "Profit generated per dollar of total assets."
+    long: >
+      Net income ÷ total assets. Shows how productively the whole asset base is used, independent
+      of how it's financed. Higher is better; it's naturally low for banks and asset-heavy firms.
+      A big gap between high ROE and low ROA signals the returns are coming from leverage.
+
+  roic:
+    title: "ROIC — Return on Invested Capital"
+    short: "Return on all capital (debt + equity) put into the business."
+    long: >
+      After-tax operating profit ÷ invested capital. The cleanest measure of business quality:
+      it ignores financing tricks. What matters is ROIC versus the cost of capital (~8-10%) —
+      above it the company creates value, below it destroys value even while reporting a profit.
+
+  # ─────────────── Growth ratios ───────────────
+  revenue_growth_yoy:
+    title: "Revenue Growth (YoY)"
+    short: "Sales change versus the same period a year ago."
+    long: >
+      Year-over-year percentage change in revenue. Higher is generally better, judged against the
+      company's stage and sector. One year can be noisy — pair it with the 3-year CAGR to tell a
+      one-off bounce from a durable trend. Negative growth is a turnaround warning.
+
+  revenue_cagr_3y:
+    title: "Revenue CAGR (3-year)"
+    short: "Smoothed annual sales growth rate over three years."
+    long: >
+      Compound annual growth rate of revenue across three years — the steady average that irons out
+      single-year noise. Higher and steadier is better. Compare it to the latest year-over-year
+      figure: if YoY is far below the 3-year CAGR, growth is decelerating.
+
+  eps_growth_yoy:
+    title: "EPS Growth (YoY)"
+    short: "Change in earnings per share versus a year ago."
+    long: >
+      Year-over-year growth in per-share earnings. Higher is better, but EPS is easily distorted by
+      one-off charges, tax items and buybacks, so a sharp swing may not reflect the real business.
+      A collapse in EPS while cash flow holds up often signals accounting noise, not distress.
+
+  fcf_growth_yoy:
+    title: "FCF Growth (YoY)"
+    short: "Change in free cash flow versus a year ago."
+    long: >
+      Year-over-year growth in free cash flow — often more telling than EPS because cash is harder
+      to manipulate. Higher is better. Lumpy capex and working-capital timing make single years
+      swing, which is why our DCF uses a multi-year average base.
+
+  # ─────────────── Leverage / liquidity ───────────────
+  debt_to_equity:
+    title: "Debt / Equity (D/E)"
+    short: "Total debt relative to shareholder equity — a leverage gauge."
+    long: >
+      Total debt ÷ equity. Shows how much the company is financed by borrowing versus owners'
+      money. Lower is safer; comfortable levels vary by industry (utilities and REITs carry more).
+      A negative D/E means negative book equity — sometimes distress, sometimes just years of
+      buybacks, so read it with interest coverage before judging.
+
+  net_debt_to_ebitda:
+    title: "Net Debt / EBITDA"
+    short: "Years of cash profit it would take to repay net debt."
+    long: >
+      (Debt − cash) ÷ EBITDA. A leverage measure in intuitive units: how many years of operating
+      cash profit the net debt represents. Under ~3x is generally comfortable, above ~5x is stretched.
+      Negative means the company holds more cash than debt.
+
+  current_ratio:
+    title: "Current Ratio"
+    short: "Short-term assets versus short-term liabilities."
+    long: >
+      Current assets ÷ current liabilities. Measures whether the company can cover bills due within
+      a year. Above ~1.5 is healthy; below 1 means short-term obligations exceed liquid assets and
+      can signal a cash crunch.
+
+  quick_ratio:
+    title: "Quick Ratio"
+    short: "Current ratio excluding inventory — a stricter liquidity test."
+    long: >
+      (Current assets − inventory) ÷ current liabilities. Like the current ratio but ignores
+      inventory, which can be hard to sell fast. Above ~1 is healthy. It matters most for retailers
+      and manufacturers where inventory is a big share of current assets.
+
+  interest_coverage:
+    title: "Interest Coverage"
+    short: "How many times operating profit covers interest owed."
+    long: >
+      Operating income ÷ interest expense. Shows how comfortably the company services its debt.
+      Above ~4x is comfortable; below ~1.5x is dangerous, and below 1x means profits don't cover
+      interest at all. It's a key input to whether negative equity or high debt is actually alarming.
+
+  # ─────────────── Cash flow ───────────────
+  free_cash_flow:
+    title: "Free Cash Flow (FCF)"
+    short: "Cash left after running the business and funding capex."
+    long: >
+      Operating cash flow minus capital expenditures — the real cash available to pay dividends,
+      cut debt or reinvest. Positive and growing is the goal. Unlike net income, it's hard to fake,
+      which is why our fair-value DCF is built on it (using a multi-year average to smooth noise).
+
+  fcf_margin:
+    title: "FCF Margin"
+    short: "Free cash flow as a percentage of revenue."
+    long: >
+      Free cash flow ÷ revenue. Shows how much of each sales dollar becomes spendable cash. Higher
+      is better; a strong FCF margin alongside weak reported earnings often means accounting charges
+      are masking a healthy cash engine.
+
+  fcf_yield:
+    title: "FCF Yield"
+    short: "Free cash flow relative to the company's market value."
+    long: >
+      Free cash flow ÷ market cap — the cash-flow equivalent of an interest rate on the stock.
+      Higher is cheaper/more attractive; above ~5% is appealing. It's a quick reality check on
+      valuation: a rich-looking growth stock often has a tiny or negative FCF yield.
+
+  capex_to_revenue:
+    title: "Capex / Revenue"
+    short: "Share of revenue reinvested in property and equipment."
+    long: >
+      Capital expenditure ÷ revenue. Shows how capital-intensive the business is. Lower means an
+      asset-light model that converts more revenue to free cash; higher (utilities, telecom, REITs)
+      means heavy reinvestment is needed just to stand still.
+
+  # ─────────────── Valuation multiples ───────────────
+  pe_trailing:
+    title: "P/E (Trailing)"
+    short: "Price versus the last 12 months of earnings per share."
+    long: >
+      Share price ÷ trailing EPS — dollars paid per dollar of past earnings. Lower is cheaper, but a
+      low P/E can be a value trap and a high one can be justified by growth. Meaningless when
+      earnings are negative or distorted by one-offs.
+
+  pe_forward:
+    title: "P/E (Forward)"
+    short: "Price versus analysts' expected next-year earnings."
+    long: >
+      Share price ÷ estimated forward EPS. Uses expectations rather than history, so it's more
+      relevant for changing businesses but only as good as the estimate. A forward P/E well below
+      the trailing P/E implies the market expects an earnings recovery.
+
+  price_to_book:
+    title: "Price / Book (P/B)"
+    short: "Market value versus accounting net worth."
+    long: >
+      Share price ÷ book value per share. Central for banks and asset plays; less useful for
+      asset-light firms. Below 1 can mean cheap or troubled; a high P/B is only justified by a high
+      ROE. Read P/B and ROE together — they're two halves of the same story.
+
+  price_to_sales:
+    title: "Price / Sales (P/S)"
+    short: "Market value versus annual revenue."
+    long: >
+      Market cap ÷ revenue. Used when earnings are negative or volatile, common for growth names.
+      Lower is cheaper, but a high P/S can be fine if margins are high or improving. A rich P/S on
+      thin margins is priced entirely on future growth.
+
+  ev_to_ebitda:
+    title: "EV / EBITDA"
+    short: "Whole-company value versus cash operating profit."
+    long: >
+      Enterprise value (market cap + debt − cash) ÷ EBITDA. A capital-structure-neutral valuation
+      multiple, good for comparing across companies with different debt loads. Roughly 8-12x is
+      typical; above ~20x is rich and prices in strong growth.
+
+  ev_to_revenue:
+    title: "EV / Revenue"
+    short: "Whole-company value versus annual revenue."
+    long: >
+      Enterprise value ÷ revenue. Used for companies without meaningful profits yet. Lower is
+      cheaper; a high multiple only makes sense with high or fast-improving margins. Our growth
+      valuation scales this multiple by the Rule of 40 score.
+
+  peg_ratio:
+    title: "PEG Ratio"
+    short: "P/E divided by the earnings growth rate."
+    long: >
+      Price/earnings ÷ earnings growth. Puts the P/E in context of growth: around 1 is often
+      considered fair, below 1 potentially cheap for the growth on offer. Fragile when growth is
+      erratic or the P/E is distorted, so treat it as a rough sniff test.
+
+  # ─────────────── Dividend ───────────────
+  dividend_yield:
+    title: "Dividend Yield"
+    short: "Annual dividend as a percentage of the share price."
+    long: >
+      Dividend per share ÷ price. The income return before any price change. Higher looks
+      attractive, but an unusually high yield often means the market expects a cut — always check
+      it against the payout ratio and free cash flow.
+
+  payout_ratio:
+    title: "Payout Ratio"
+    short: "Share of earnings paid out as dividends."
+    long: >
+      Dividends ÷ net income. Shows how sustainable the dividend is. Comfortably below 100% leaves
+      room to keep paying and reinvest; above 100% means the company is paying out more than it
+      earns, a sustainability red flag — though a temporary earnings dip can spike it harmlessly.
+
+  # ─────────────── Valuation concepts ───────────────
+  rule_of_40:
+    title: "Rule of 40"
+    short: "Revenue growth % plus profit margin % — should exceed 40 for software."
+    long: >
+      A health check for growth/software companies: add the revenue growth rate and the profit (or
+      FCF) margin; 40 or more is considered healthy. It captures the growth-versus-profitability
+      trade-off — you can grow fast and burn cash, or grow slower and be profitable, but the sum
+      should clear the bar. We use it to scale the valuation multiple for growth-archetype names.
+
+  ffo:
+    title: "FFO — Funds From Operations"
+    short: "REIT cash earnings: net income with depreciation added back."
+    long: >
+      The REIT industry's earnings measure: net income plus real-estate depreciation (a large
+      non-cash charge that understates property value). It's a far better profitability gauge for
+      REITs than net income. We approximate it as net income + depreciation, since the exact
+      company-reported figure isn't in our data source.
+
+  affo:
+    title: "AFFO — Adjusted Funds From Operations"
+    short: "FFO minus the capex needed to maintain properties."
+    long: >
+      FFO adjusted for recurring maintenance capital spending — the closest thing to a REIT's true
+      distributable cash, and the standard basis for valuing REITs (via a P/AFFO multiple). Higher
+      is better. We approximate maintenance capex as a fraction of depreciation, so treat the figure
+      as indicative, not exact.
+
+  nav:
+    title: "NAV — Net Asset Value"
+    short: "Estimated market value of assets minus liabilities."
+    long: >
+      What the company's assets would fetch, less its debts, per share. The anchor for valuing
+      asset plays like miners and energy. Trading below NAV can signal a bargain (or hidden
+      problems); above NAV means the market expects the assets to earn more than book.
+
+  # ─────────────── Our invented / tool-specific metrics ───────────────
+  fair_value:
+    title: "Fair Value Range"
+    short: "Our estimate of what a share is worth, as a low–mid–high band."
+    long: >
+      An estimate of intrinsic worth per share, always shown as a range with a confidence level,
+      never a single false-precision number. Compare it to the market price: a price well below the
+      range suggests undervaluation, well above suggests the opposite. The method depends on the
+      archetype (DCF, multiples, P/B, FFO, or survival analysis).
+
+  consensus_range:
+    title: "AI Fair Value Consensus"
+    short: "Weighted blend of the blind AI analysts and the rule-based engine."
+    long: >
+      The headline fair-value range: a weighted average of each price-blind AI analyst's estimate
+      plus our rule-based engine. Only the blind pass feeds this — sighted AI estimates are excluded
+      because they anchor to the market price. The width and the confidence tell you how firm the
+      number is.
+
+  blind_pass:
+    title: "Blind Pass"
+    short: "AI analysts value the company without seeing the market price."
+    long: >
+      In the first pass, each AI analyst gets a briefing with the price, market cap and all
+      price-derived multiples stripped out, and must derive fair value from the fundamentals alone.
+      This is the only pass that feeds the fair-value consensus, because it can't be anchored to
+      the market's current opinion.
+
+  sighted_pass:
+    title: "Sighted Pass"
+    short: "AI analysts see the full picture; used only for commentary."
+    long: >
+      In the second pass, the same analysts get the complete briefing including price and multiples.
+      We keep only their qualitative output — risks, archetype disputes, critiques — because their
+      sighted fair values reliably drift toward the market price (anchoring). Those numbers are shown
+      as a footnote and never averaged into the consensus.
+
+  ai_disagreement:
+    title: "AI Disagreement"
+    short: "How far the blind AI analysts' valuations spread apart."
+    long: >
+      The spread of the blind AI analysts' fair-value midpoints, relative to their average. It's the
+      'how hard is this to value' signal: under ~10% means they broadly agree (more reliable), over
+      ~25% means they see very different companies (treat the consensus with caution). High
+      disagreement lowers the overall confidence.
+
+  model_gap:
+    title: "Model Gap"
+    short: "Distance between our rule-based estimate and the AI estimate."
+    long: >
+      How far our rule-based fair value sits from the blind AI consensus. It's a 'do our assumptions
+      differ from the AI's judgment' signal, not a good/bad measure. A large gap is a prompt to
+      re-examine the rule-based method's assumptions — often the AIs are flagging a genuine
+      limitation (like the wrong valuation lens for the business).
+
+  price_deviation:
+    title: "Price Deviation"
+    short: "How far the AI's blind midpoint sits from the market price."
+    long: >
+      The gap between the blind AI consensus midpoint and the actual market price. A large deviation
+      means the fundamentals-only estimate disagrees with the market — potential mispricing or a
+      sign the market knows something the fundamentals don't. Near zero on the sighted pass is a
+      warning sign of anchoring.
+
+  anchored_consensus:
+    title: "Anchored Consensus Warning"
+    short: "Sighted AI agreement that may just be echoing the market price."
+    long: >
+      Fires when the sighted AI midpoint sits very close to the market price AND the analysts barely
+      disagree. That combination usually means they anchored to the price they were shown rather than
+      forming an independent view, so their apparent agreement carries little information. It's a
+      reason to trust the blind consensus over the sighted footnote.
+
+  overall_confidence:
+    title: "Overall Confidence"
+    short: "How much to trust the consensus, after penalizing disagreement."
+    long: >
+      A blended confidence for the fair-value consensus: the analysts' average self-reported
+      confidence, reduced when they disagree with each other. Higher is firmer. Low confidence means
+      either the analysts were unsure or they diverged — either way, lean on the range, not the
+      midpoint.
+
+  classifier_confidence:
+    title: "Classifier Confidence"
+    short: "How sure the archetype classifier is about the business shape."
+    long: >
+      How decisively our rule-based classifier picked the archetype, based on how clearly one shape
+      won over the others and how complete the data was. High means an obvious call (a clear bank or
+      REIT); low (≤50%) means an ambiguous, mixed-signal company — and if the AI analysts then
+      unanimously disagree, we show a second valuation under their suggested archetype.
+
+  unanimous_dispute:
+    title: "Unanimous Dispute"
+    short: "All blind AI analysts reject the classifier's archetype."
+    long: >
+      When every blind AI analyst disagrees with our archetype label and the classifier itself
+      wasn't confident (≤50%), we don't silently override it — we re-run the fair-value estimate
+      under the archetype the AIs suggested and show both, clearly labeled. It surfaces cases where
+      the wrong valuation lens would badly misprice the company.
+
+  margin_of_safety:
+    title: "Margin of Safety"
+    short: "A discount below fair value before it's a buy."
+    long: >
+      A deliberate cushion: the buy-below target is set some percentage under the fair-value
+      midpoint (more for riskier archetypes). It protects against being wrong — you only buy when
+      the price offers enough discount to absorb estimation error. Bigger margin = more conservative.
+
+  quadrant:
+    title: "Quality-vs-Price Quadrant"
+    short: "Separates 'good company' from 'good price' on a 2x2."
+    long: >
+      Plots business quality against valuation to keep two different questions apart. The four
+      corners: Strong Buy (good company, good price), Watchlist (good company, rich price — wait for
+      a pullback), Value Trap (cheap but low quality — cheap for a reason), and Avoid (poor and
+      expensive). It stops a great business from looking like a buy at any price.
+
+  strong_buy:
+    title: "Strong Buy (quadrant)"
+    short: "High quality and attractively priced."
+    long: >
+      The best corner of the quality-vs-price quadrant: a good business available at a good price.
+      Still size positions sensibly and respect any red flags, but this is where quality and value
+      line up.
+
+  watchlist:
+    title: "Watchlist (quadrant)"
+    short: "Good company, but the price is rich — wait for a pullback."
+    long: >
+      High business quality paired with an unattractive valuation. Nothing wrong with the company;
+      you're just being asked to overpay. The play is patience: keep it on a list and buy on
+      weakness toward the fair-value range.
+
+  value_trap:
+    title: "Value Trap (quadrant)"
+    short: "Looks cheap, but low quality — cheap for a reason."
+    long: >
+      A low valuation score sitting on a weak-quality business. The cheapness is often justified by
+      deteriorating fundamentals, so it can keep getting 'cheaper'. Verify the low price isn't the
+      market correctly pricing in real problems before treating it as a bargain.
+
+  avoid:
+    title: "Avoid (quadrant)"
+    short: "Poor quality and expensive — the worst corner."
+    long: >
+      Weak business fundamentals and a rich price at the same time. Little to like on either axis;
+      generally one to pass on unless the whole thesis is a specific catalyst not captured here.
+
+  position_sizing:
+    title: "Position Sizing (heuristic)"
+    short: "A suggested maximum share of the portfolio — not advice."
+    long: >
+      A rough cap on how much of a portfolio one position should be: a 10% ceiling scaled down by
+      the ensemble confidence and the investor score, then halved if any red flag is present. It's
+      a discipline tool to size conviction, deliberately conservative, and explicitly not financial
+      advice.
+
+  red_flag_veto:
+    title: "Red-Flag Veto"
+    short: "Serious findings that cap the score instead of just lowering it."
+    long: >
+      Certain findings (going-concern doubt, unrefinanceable debt, dangerously thin interest
+      coverage, burning cash) are too important to average away, so they impose a hard ceiling on
+      the overall score no matter how good the other pillars are. A capped score is a signal to
+      investigate the flag before anything else. Some flags are downgraded to a note when the
+      context clears them (e.g. buyback-driven negative equity with strong coverage).

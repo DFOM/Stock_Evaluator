@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Glossary — Stock Evaluator{% endblock %}
+{% block content %}
+<div class="panel">
+  <h2>Glossary</h2>
+  <p class="dim" style="margin:.2rem 0 .7rem">
+    Plain-language reference for every term on an analysis card — what it is, how to read it, and
+    what it means in this tool. Terms on cards link here.</p>
+  <input type="text" id="gsearch" placeholder="Filter terms… (e.g. ROIC, disagreement, REIT)"
+         autocomplete="off" oninput="filterGlossary()">
+  <p class="dim" id="gcount" style="margin:.5rem 0 0"></p>
+</div>
+
+<div id="glist">
+  {% for key, t in terms %}
+  <div class="panel gentry" id="{{ key }}" data-text="{{ (t.title ~ ' ' ~ t.short ~ ' ' ~ t.long ~ ' ' ~ key)|lower }}">
+    <h2 style="text-transform:none; letter-spacing:0; font-size:1rem; color:var(--text)">{{ t.title }}</h2>
+    <p style="color:var(--accent); margin:.1rem 0 .3rem">{{ t.short }}</p>
+    <p class="dim" style="margin:.1rem 0">{{ t.long }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+  var entries = Array.prototype.slice.call(document.querySelectorAll(".gentry"));
+  var countEl = document.getElementById("gcount");
+  function filterGlossary() {
+    var q = document.getElementById("gsearch").value.trim().toLowerCase();
+    var shown = 0;
+    entries.forEach(function (el) {
+      var hit = !q || el.getAttribute("data-text").indexOf(q) !== -1;
+      el.style.display = hit ? "" : "none";
+      if (hit) shown++;
+    });
+    countEl.textContent = shown + " of " + entries.length + " terms" + (q ? " match “" + q + "”" : "");
+  }
+  // If arriving via /glossary#slug, highlight that entry.
+  function highlightHash() {
+    if (!location.hash) return;
+    var el = document.getElementById(location.hash.slice(1));
+    if (el) { el.style.boxShadow = "0 0 0 2px var(--accent)"; el.scrollIntoView({block: "center"}); }
+  }
+  filterGlossary();
+  window.addEventListener("load", highlightHash);
+  window.addEventListener("hashchange", highlightHash);
+</script>
+{% endblock %}

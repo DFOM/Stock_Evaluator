@@ -53,6 +53,25 @@
   @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
   .footnote { color: var(--dim); font-size: .88rem; border-top: 1px dashed var(--border);
               margin-top: .7rem; padding-top: .6rem; }
+  /* Glossary tooltips */
+  .gloss { position: relative; cursor: help; border-bottom: 1px dotted var(--dim);
+           outline: none; }
+  .gloss:focus-visible { border-bottom-color: var(--accent); }
+  .gloss .gi { font-size: .72em; color: var(--accent); margin-left: 1px; vertical-align: super; }
+  .gloss .tip {
+    position: absolute; left: 0; top: calc(100% + 6px); z-index: 40;
+    width: min(320px, 78vw); background: #0c1119; border: 1px solid var(--accent);
+    border-radius: 8px; padding: .6rem .75rem; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    visibility: hidden; opacity: 0; transition: opacity .12s ease;
+    font-weight: 400; text-align: left; white-space: normal; cursor: default;
+  }
+  .gloss .tip .ttitle { display: block; font-weight: 700; color: var(--text); margin-bottom: .2rem; }
+  .gloss .tip .tshort { display: block; color: var(--accent); font-size: .9rem; margin-bottom: .35rem; }
+  .gloss .tip .tlong { display: block; color: var(--dim); font-size: .86rem; line-height: 1.45; }
+  .gloss .tip .tlink { display: inline-block; margin-top: .45rem; font-size: .82rem; }
+  .gloss:hover .tip, .gloss:focus-within .tip, .gloss.open .tip { visibility: visible; opacity: 1; }
+  /* keep tooltips from spilling off the right edge in the last table column */
+  td:last-child .gloss .tip, .num .gloss .tip { left: auto; right: 0; }
 </style>
 </head>
 <body>
@@ -60,10 +79,28 @@
   {% block header %}
   <header class="top">
     <h1><a href="/">📊 Stock Evaluator</a></h1>
+    <a href="/glossary" style="color:var(--dim)">Glossary</a>
     <form method="post" action="/logout"><button class="ghost" type="submit">Log out</button></form>
   </header>
   {% endblock %}
   {% block content %}{% endblock %}
 </div>
+<script>
+  // Tap/click a glossary term to toggle its tooltip (mobile + desktop);
+  // hover handles desktop on its own via CSS. Clicking the "Full entry"
+  // link inside a tooltip still navigates.
+  document.addEventListener("click", function (e) {
+    var link = e.target.closest(".tip a");
+    if (link) return;
+    var term = e.target.closest(".gloss");
+    document.querySelectorAll(".gloss.open").forEach(function (el) {
+      if (el !== term) el.classList.remove("open");
+    });
+    if (term) { e.preventDefault(); term.classList.toggle("open"); }
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") document.querySelectorAll(".gloss.open").forEach(function (el) { el.classList.remove("open"); });
+  });
+</script>
 </body>
 </html>

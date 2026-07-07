@@ -46,6 +46,22 @@ def active_count() -> int:
         return len(db.execute(select(Analysis.id).where(Analysis.status.in_(ACTIVE_STATUSES))).all())
 
 
+def sweep_interrupted() -> int:
+    """Mark analyses stranded in queued/running (a process died mid-run, e.g.
+    a Railway restart) as failed so the UI stops spinning on them. Returns the
+    number swept. Run once at startup."""
+    with SessionLocal() as db:
+        stuck = list(
+            db.execute(select(Analysis).where(Analysis.status.in_(ACTIVE_STATUSES))).scalars()
+        )
+        for a in stuck:
+            a.status = "failed"
+            a.error = "interrupted by restart"
+            a.finished_at = utcnow()
+        db.commit()
+        return len(stuck)
+
+
 def create_analysis(ticker: str) -> Analysis:
     with SessionLocal() as db:
         analysis = Analysis(ticker=ticker, status="queued")

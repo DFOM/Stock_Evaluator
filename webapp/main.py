@@ -16,6 +16,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from webapp import auth, service, settings
 from webapp.db import init_db
+from webapp.glossary import (
+    PILLAR_GLOSS,
+    RATIO_GLOSS,
+    load_glossary,
+    quadrant_slug,
+    sorted_terms,
+)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("webapp")
@@ -58,6 +65,8 @@ templates.env.filters["money"] = _fmt_money
 templates.env.filters["pct0"] = _fmt_pct0
 templates.env.filters["pct1"] = _fmt_pct1
 templates.env.filters["rfmt"] = _fmt_ratio
+# Glossary available to every template (the `g` macro reads it).
+templates.env.globals["GLOSSARY"] = load_glossary()
 
 # Same grouping as the CLI's Key Ratios table.
 RATIO_GROUPS = [
@@ -112,6 +121,13 @@ app.add_middleware(AuthMiddleware)
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    # In-process BackgroundTasks don't survive a restart; any analysis left
+    # mid-run when the process died is stranded in queued/running forever.
+    # Mark those failed so the UI shows a retriable state instead of a
+    # perpetual spinner.
+    swept = service.sweep_interrupted()
+    if swept:
+        log.warning("startup sweep: marked %d interrupted analyses as failed", swept)
     if settings.SECRET_KEY_WAS_GENERATED:
         log.warning("SECRET_KEY not set — using a random per-process key; sessions reset on restart.")
     if not settings.ADMIN_PASSWORD_HASH:
@@ -214,10 +230,21 @@ def analysis_page(request: Request, analysis_id: int, cached: str = ""):
     analysis = service.get_analysis(analysis_id)
     if analysis is None:
         return RedirectResponse("/?msg=Analysis+not+found", status_code=303)
+    payload = analysis.payload or {}
+    quadrant = payload.get("quadrant") or {}
     return templates.TemplateResponse(
         request, "analysis.html",
-        {"a": analysis, "payload": analysis.payload, "from_cache": bool(cached), "ratio_groups": RATIO_GROUPS},
+        {
+            "a": analysis, "payload": analysis.payload, "from_cache": bool(cached),
+            "ratio_groups": RATIO_GROUPS, "ratio_gloss": RATIO_GLOSS, "pillar_gloss": PILLAR_GLOSS,
+            "quadrant_gloss": quadrant_slug(quadrant.get("verdict", "")),
+        },
     )
+
+
+@app.get("/glossary", response_class=HTMLResponse)
+def glossary_page(request: Request):
+    return templates.TemplateResponse(request, "glossary.html", {"terms": sorted_terms()})
 
 
 @app.get("/analysis/{analysis_id}/status")
