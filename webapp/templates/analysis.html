@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}{{ a.ticker }} — Stock Evaluator{% endblock %}
+{% block content %}
+
+{% if a.status in ("queued", "running") %}
+  <div class="panel" style="text-align:center; padding:3rem 1rem;">
+    <p><span class="spinner"></span></p>
+    <p class="big">{{ a.ticker }} — analysis {{ a.status }}</p>
+    <p class="dim">Dual-pass ensemble in flight (blind consensus + sighted critic). This page refreshes automatically.</p>
+  </div>
+  <script>
+    async function poll() {
+      try {
+        const r = await fetch("/analysis/{{ a.id }}/status");
+        const j = await r.json();
+        if (j.status === "done" || j.status === "failed") location.reload();
+      } catch (e) { /* transient — keep polling */ }
+    }
+    setInterval(poll, 2500);
+  </script>
+
+{% elif a.status == "failed" %}
+  <div class="panel flag-red">
+    <h2>{{ a.ticker }} — analysis failed</h2>
+    <p class="bad">{{ a.error }}</p>
+    <form method="post" action="/analyze">
+      <input type="hidden" name="ticker" value="{{ a.ticker }}">
+      <input type="hidden" name="force" value="1">
+      <button type="submit">Retry</button>
+    </form>
+  </div>
+
+{% elif payload %}
+  {% set c = payload.company %}
+  {% set cur = c.currency or "" %}
+  {% set ens = payload.ensemble %}
+
+  {% if from_cache %}
+  <div class="msg">
+    Served from cache — completed {{ a.finished_at.strftime("%Y-%m-%d %H:%M UTC") }}.
+    <form method="post" action="/analyze" style="display:inline">
+      <input type="hidden" name="ticker" value="{{ a.ticker }}">
+      <input type="hidden" name="force" value="1">
+      <button type="submit" class="ghost" style="margin-left:.6rem">Re-run now (costs API money)</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <h2>Company</h2>
+    <p class="big" style="margin:.1rem 0">{{ c.name or a.ticker }} ({{ payload.ticker }})</p>
+    <p class="dim" style="margin:.2rem 0">{{ c.sector or "n/a" }} / {{ c.industry or "n/a" }} · {{ c.country or "n/a" }}</p>
+    <p style="margin:.2rem 0">Price: <strong>{{ c.current_price|money(cur) }}</strong>
+       &nbsp;·&nbsp; Market cap: {{ c.market_cap|money(cur) }}
+       &nbsp;·&nbsp; EV: {{ c.enterprise_value|money(cur) }}</p>
+    <p class="dim" style="margin:0">Analyzed {{ a.finished_at.strftime("%Y-%m-%d %H:%M UTC") }} · ratio completeness {{ (payload.ratio_completeness * 100)|round|int }}%</p>
+  </div>
+
+  {% if payload.data_warnings %}
+  <div class="panel flag-yellow">
+    <h2>Data warnings</h2>
+    <ul>{% for w in payload.data_warnings %}<li class="warn">{{ w }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <h2>Archetype</h2>
+    <p class="big" style="margin:.1rem 0">{{ payload.archetype.name|upper }}
+      <span class="dim" style="font-size:1rem">(classifier confidence {{ payload.archetype.confidence|pct0 }})</span></p>
+    <ul>
+      {% for r in payload.archetype.reasons %}<li>{{ r }}</li>{% endfor %}
+    </ul>
+    <p class="dim" style="margin:0">Candidate scores:
+      {% for k, v in payload.archetype.candidate_scores.items() %}{{ k }}={{ v }}{{ ", " if not loop.last }}{% endfor %}
+    </p>
+    {% if payload.alt_valuation %}
+      <p class="warn" style="margin-bottom:0">⚠ {{ payload.alt_valuation.reason }} See the alternative valuation below.</p>
+    {% endif %}
+  </div>
+
+  {% if ens %}
+  {% set cons = ens.consensus %}
+  <div class="panel">
+    <h2>AI Fair Value Consensus (blind pass + rule engine)</h2>
+    {% if cons.consensus_mid is not none %}
+      <p class="big" style="margin:.1rem 0">
+        {{ cons.consensus_low|money(cur) }} — {{ cons.consensus_mid|money(cur) }} — {{ cons.consensus_high|money(cur) }}
+        <span class="dim" style="font-size:.95rem">(low / mid / high)</span>
+      </p>
+      <table style="margin:.5rem 0">
+        <tr><td>Overall confidence</td>
+            <td class="num"><strong>{{ cons.overall_confidence|pct0 }}</strong></td></tr>
+        <tr><td>AI disagreement (blind ranges)</td>
+            <td class="num {{ 'good' if cons.ai_disagreement is not none and cons.ai_disagreement < 0.10 else 'warn' if cons.ai_disagreement is not none and cons.ai_disagreement < 0.25 else 'bad' }}">
+              {{ cons.ai_disagreement|pct1 if cons.ai_disagreement is not none else "n/a" }}
+              {{ "· broadly agree" if cons.ai_disagreement is not none and cons.ai_disagreement < 0.10
+                 else "· moderate" if cons.ai_disagreement is not none and cons.ai_disagreement < 0.25
+                 else "· HIGH — hard to value" if cons.ai_disagreement is not none else "" }}</td></tr>
+        <tr><td>Model gap (rule vs blind AI)</td>
+            <td class="num {{ 'good' if cons.model_gap is not none and cons.model_gap < 0.20 else 'warn' if cons.model_gap is not none and cons.model_gap < 0.50 else 'bad' }}">
+              {{ cons.model_gap|pct1 if cons.model_gap is not none else "n/a" }}
+              {{ "· aligned" if cons.model_gap is not none and cons.model_gap < 0.20
+                 else "· review rule assumptions" if cons.model_gap is not none and cons.model_gap < 0.50
+                 else "· LARGE divergence" if cons.model_gap is not none else "" }}</td></tr>
+        {% if cons.price_deviation is not none %}
+        <tr><td>Price deviation (blind mid vs market)</td>
+            <td class="num">{{ cons.price_deviation|pct1 }}</td></tr>
+        {% endif %}
+      </table>
+
+      <h2 style="margin-top:.8rem">Contributors</h2>
+      <ul>
+      {% for r in ens.contributors %}
+        {% if r.ok %}
+        <li>
+          <strong>{{ r.analyst_name }}</strong>{% if r.analyst_name == "rule-based-engine" %} <span class="dim">(rule-based)</span>{% endif %}:
+          {{ r.fair_value_low|money(cur) }} — {{ r.fair_value_high|money(cur) }},
+          conf {{ r.confidence|pct0 }}
+          {% if r.archetype_agreement == false %}
+            <span class="warn">· disputes archetype → {{ r.suggested_archetype or "?" }}</span>
+          {% endif %}
+        </li>
+        {% else %}
+        <li class="bad">{{ r.analyst_name }}: FAILED — {{ r.error }}</li>
+        {% endif %}
+      {% endfor %}
+      </ul>
+    {% else %}
+      <p class="dim">No usable analyst responses — consensus unavailable.</p>
+    {% endif %}
+
+    {% if ens.critic and ens.critic.summary.ai_consensus_mid is not none %}
+    <div class="footnote">
+      Sighted AI view (anchoring-prone, excluded from consensus):
+      {{ ens.critic.summary.ai_consensus_low|money(cur) }} — {{ ens.critic.summary.ai_consensus_high|money(cur) }}
+      (mid {{ ens.critic.summary.ai_consensus_mid|money(cur) }})
+      {% if ens.critic.summary.anchored_warning %}
+        <br><span class="warn">⚠ AI consensus may be anchored to market price — treat agreement as low-information.</span>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% if cons.skipped %}
+      {% for msg in cons.skipped %}<p class="warn" style="margin:.3rem 0 0">⚠ {{ msg }}</p>{% endfor %}
+    {% endif %}
+  </div>
+
+  {% if ens.critic %}
+  <div class="panel">
+    <h2>Critic Notes (sighted pass)</h2>
+    {% if ens.critic.summary.archetype_disputes %}
+      {% for d in ens.critic.summary.archetype_disputes %}<p class="warn" style="margin:.15rem 0">⚠ {{ d }}</p>{% endfor %}
+    {% endif %}
+    {% set risks = [] %}
+    {% for r in ens.critic.analysts %}{% for k in r.key_risks %}{% if k not in risks %}{% set _ = risks.append(k) %}{% endif %}{% endfor %}{% endfor %}
+    {% if risks %}
+      <p style="margin:.4rem 0 .1rem"><strong>Key risks</strong></p>
+      <ul>{% for k in risks[:8] %}<li>{{ k }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% for r in ens.critic.analysts if r.ok and r.one_paragraph_thesis %}
+      <p style="margin:.6rem 0 .1rem"><strong>{{ r.analyst_name }}</strong></p>
+      <p class="dim" style="margin:.1rem 0">{{ r.one_paragraph_thesis }}</p>
+    {% endfor %}
+    {% for r in ens.critic.analysts if not r.ok %}
+      <p class="bad">⚠ {{ r.analyst_name }} (sighted) FAILED — {{ r.error }}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>Pillar scores (0–10)</h2>
+      <table>
+        {% for name, ps in payload.pillar_scores.items() %}
+        <tr>
+          <td>{{ name.replace("_", " ")|title }}</td>
+          <td class="num {{ 'good' if ps.score is not none and ps.score >= 7 else 'warn' if ps.score is not none and ps.score >= 4 else 'bad' }}">
+            {{ "%.1f"|format(ps.score) if ps.score is not none else "n/a" }}</td>
+          <td class="num dim">{{ ps.confidence|pct0 }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Scores &amp; verdict</h2>
+      <p style="margin:.2rem 0">Investor score:
+        <span class="big {{ 'good' if payload.investor_score and payload.investor_score >= 7 else 'warn' if payload.investor_score and payload.investor_score >= 4 else 'bad' }}">
+          {{ "%.1f"|format(payload.investor_score) if payload.investor_score is not none else "n/a" }}/10</span>
+        <span class="dim">(years horizon)</span></p>
+      <p style="margin:.2rem 0">Trader score:
+        <span class="big {{ 'good' if payload.trader_score and payload.trader_score >= 7 else 'warn' if payload.trader_score and payload.trader_score >= 4 else 'bad' }}">
+          {{ "%.1f"|format(payload.trader_score) if payload.trader_score is not none else "n/a" }}/10</span>
+        <span class="dim">(weeks–months)</span></p>
+      <p style="margin:.5rem 0 .1rem"><strong>{{ payload.quadrant.verdict }}</strong></p>
+      <p class="dim" style="margin:.1rem 0">{{ payload.quadrant.reason }}</p>
+    </div>
+  </div>
+
+  <div class="panel {{ 'flag-red' if payload.red_flags else 'flag-yellow' if payload.info_notes else '' }}">
+    <h2>Red flags &amp; notes</h2>
+    {% if payload.red_flags %}
+      {% for f in payload.red_flags %}
+        <p style="margin:.2rem 0"><span class="bad">● {{ f.name }}</span>
+          <span class="dim">(caps score at {{ f.score_cap }}/10)</span><br>
+          <span class="dim">{{ f.description }}</span></p>
+      {% endfor %}
+    {% endif %}
+    {% for n in payload.info_notes %}<p class="warn" style="margin:.2rem 0">ℹ {{ n }}</p>{% endfor %}
+    {% if not payload.red_flags and not payload.info_notes %}<p class="good" style="margin:0">No red flags detected.</p>{% endif %}
+  </div>
+
+  {% macro fv_panel(fv, title, highlight=false) %}
+  <div class="panel {{ 'flag-yellow' if highlight else '' }}">
+    <h2>{{ title }}</h2>
+    <p class="dim" style="margin:.1rem 0">{{ fv.method }} · confidence {{ fv.confidence|pct0 }}</p>
+    {% if fv.mid is not none %}
+      <p class="big" style="margin:.2rem 0">{{ fv.low|money(fv.currency or cur) }} — {{ fv.mid|money(fv.currency or cur) }} — {{ fv.high|money(fv.currency or cur) }}</p>
+      {% if fv.margin_of_safety_price is not none %}
+        <p style="margin:.2rem 0">Buy-below target: <strong>{{ fv.margin_of_safety_price|money(fv.currency or cur) }}</strong>
+          {% if fv.assumptions.margin_of_safety %}<span class="dim">({{ (fv.assumptions.margin_of_safety * 100)|round|int }}% margin of safety)</span>{% endif %}</p>
+      {% endif %}
+    {% else %}
+      <p class="dim">Could not compute a range — insufficient data.</p>
+    {% endif %}
+    {% if fv.notes %}<ul>{% for n in fv.notes %}<li class="dim">{{ n }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endmacro %}
+
+  {{ fv_panel(payload.fair_value, "Rule-Based Fair Value (" + payload.archetype.name + ")") }}
+
+  {% if payload.alt_valuation %}
+    {{ fv_panel(payload.alt_valuation.fair_value,
+                "Alternative Fair Value — AI-suggested archetype: " + payload.alt_valuation.archetype, true) }}
+  {% endif %}
+
+  {% if payload.position_hint %}
+  <div class="panel">
+    <h2>Position sizing (heuristic)</h2>
+    <p style="margin:.2rem 0">Suggested max position:
+      <span class="big">{{ payload.position_hint.max_position_pct }}%</span> of portfolio
+      {% if payload.position_hint.entry_price is not none %}
+        · entry at {{ payload.position_hint.entry_price|money(cur) }} (margin-of-safety price)
+      {% endif %}</p>
+    <p class="dim" style="margin:.1rem 0">{{ payload.position_hint.rationale }}</p>
+    <p class="dim" style="margin:.1rem 0">{{ payload.position_hint.disclaimer }}</p>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <h2>Key ratios</h2>
+    <table>
+      {% for group, rows in ratio_groups %}
+        <tr><th colspan="2">{{ group }}</th></tr>
+        {% for key, label, kind in rows %}
+        <tr><td>{{ label }}</td><td class="num">{{ payload.ratios.get(key)|rfmt(kind) }}</td></tr>
+        {% endfor %}
+      {% endfor %}
+    </table>
+  </div>
+
+  <p class="dim">Estimated AI cost for this analysis: <strong>${{ "%.4f"|format(a.total_cost or 0) }}</strong></p>
+{% endif %}
+{% endblock %}

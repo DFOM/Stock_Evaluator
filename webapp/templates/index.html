@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+{% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+
+<div class="panel">
+  <h2>Analyze a ticker</h2>
+  <form method="post" action="/analyze" style="display:flex; gap:.6rem;">
+    <input type="text" name="ticker" placeholder="e.g. AAPL, EPRT, JJSF" required
+           pattern="[A-Za-z0-9.\-]{1,10}" style="flex:1">
+    <button type="submit">Analyze</button>
+  </form>
+  <p class="dim" style="margin-bottom:0">Dual-pass AI ensemble (blind consensus + sighted critic) — each fresh run costs a few cents.
+     Results younger than the cache window are served instantly.</p>
+</div>
+
+<div class="panel">
+  <h2>Recent analyses</h2>
+  {% if analyses %}
+  <table>
+    <tr><th>Ticker</th><th>When (UTC)</th><th>Status</th><th class="num">Investor</th>
+        <th class="num">Consensus mid</th><th class="num">Cost</th></tr>
+    {% for a in analyses %}
+    <tr>
+      <td><a href="/analysis/{{ a.id }}"><strong>{{ a.ticker }}</strong></a></td>
+      <td class="dim">{{ a.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td><span class="badge {{ a.status }}">{{ a.status }}</span></td>
+      <td class="num">{{ "%.1f"|format(a.investor_score) if a.investor_score is not none else "—" }}</td>
+      <td class="num">{{ "%.2f"|format(a.consensus_mid) if a.consensus_mid is not none else "—" }}</td>
+      <td class="num dim">${{ "%.3f"|format(a.total_cost or 0) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="dim">Nothing yet — run your first analysis above.</p>
+  {% endif %}
+</div>
+{% endblock %}
